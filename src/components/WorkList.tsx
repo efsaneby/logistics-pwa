@@ -8,10 +8,10 @@ import { Clock, Trash2, Calendar, RefreshCw } from "lucide-react";
 
 interface WorkCardData {
   id: string;
-  work_date: string;
+  date: string;
   start_time: string;
   end_time: string;
-  pause_minutes: number;
+  break_minutes: number;
   normal_hours: number;
   overtime_130: number;
   created_at: string;
@@ -30,7 +30,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
       const { data, error } = await supabase
         .from("work_cards")
         .select("*")
-        .order("work_date", { ascending: false });
+        .order("date", { ascending: false });
 
       if (error) {
         setErrorMsg(error.message);
@@ -74,11 +74,11 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
   };
 
   const totalNormal = works.reduce(
-    (acc, curr) => acc + Number(curr.normal_hours),
+    (acc, curr) => acc + Number(curr.normal_hours || 0),
     0,
   );
   const totalOvertime = works.reduce(
-    (acc, curr) => acc + Number(curr.overtime_130),
+    (acc, curr) => acc + Number(curr.overtime_130 || 0),
     0,
   );
 
@@ -159,11 +159,11 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                 <div className="space-y-1">
                   <div className="flex items-center gap-1 font-semibold text-slate-800">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{work.work_date}</span>
+                    <span>{work.date}</span>
                   </div>
                   <div className="text-slate-500">
                     {formatTime(work.start_time)} - {formatTime(work.end_time)}{" "}
-                    ({work.pause_minutes}m pauze)
+                    ({work.break_minutes}m pauze)
                   </div>
                 </div>
 
