@@ -16,7 +16,7 @@ export default function WorkCard({
 }) {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [pauseMinutes, setPauseMinutes] = useState("30"); // Varsayılan 30 dk mola
+  const [pauseMinutes, setPauseMinutes] = useState("60"); // Varsayılan 60 dk (1 saat)
   const [result, setResult] = useState<WorkHoursResult | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -50,9 +50,15 @@ export default function WorkCard({
       const supabase = createClient();
       const startDate = new Date(startTime);
 
+      // Tarihi yerel saat dilimine (YYYY-MM-DD) göre formatlama
+      const year = startDate.getFullYear();
+      const month = String(startDate.getMonth() + 1).padStart(2, "0");
+      const day = String(startDate.getDate()).padStart(2, "0");
+      const localWorkDate = `${year}-${month}-${day}`;
+
       const { error } = await supabase.from("work_cards").insert([
         {
-          work_date: startDate.toISOString().split("T")[0],
+          work_date: localWorkDate,
           start_time: startDate.toISOString(),
           end_time: new Date(endTime).toISOString(),
           pause_minutes: Number(pauseMinutes) || 0,
