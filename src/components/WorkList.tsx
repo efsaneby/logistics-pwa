@@ -82,15 +82,25 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
     0,
   );
 
-  const formatTime = (dateString: string) => {
+  // Saat formatlama fonksiyonu ("16:00:00" -> "16:00")
+  const formatTime = (timeString: string) => {
+    if (!timeString) return "--:--";
+
+    // Eğer string "16:00:00" biçimindeyse saat ve dakikayı al
+    if (timeString.includes(":")) {
+      const parts = timeString.split(":");
+      return `${parts[0]}:${parts[1]}`;
+    }
+
+    // Eğer ISO tarih formatındaysa
     try {
-      const d = new Date(dateString);
+      const d = new Date(timeString);
       return d.toLocaleTimeString("nl-NL", {
         hour: "2-digit",
         minute: "2-digit",
       });
     } catch {
-      return dateString;
+      return timeString;
     }
   };
 
