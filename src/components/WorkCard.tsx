@@ -49,17 +49,23 @@ export default function WorkCard({
       setSaving(true);
       const supabase = createClient();
       const startDate = new Date(startTime);
+      const endDate = new Date(endTime);
 
+      // YYYY-MM-DD biçiminde tarih
       const year = startDate.getFullYear();
       const month = String(startDate.getMonth() + 1).padStart(2, "0");
       const day = String(startDate.getDate()).padStart(2, "0");
       const localDate = `${year}-${month}-${day}`;
 
+      // HH:mm:ss biçiminde saatler (Supabase TIME kolonu için)
+      const startFormatted = startDate.toTimeString().split(" ")[0];
+      const endFormatted = endDate.toTimeString().split(" ")[0];
+
       const { error } = await supabase.from("work_cards").insert([
         {
           date: localDate,
-          start_time: startDate.toISOString(),
-          end_time: new Date(endTime).toISOString(),
+          start_time: startFormatted,
+          end_time: endFormatted,
           break_minutes: Number(pauseMinutes) || 0,
           normal_hours: result.normalHours,
           overtime_130: result.overtime130,
