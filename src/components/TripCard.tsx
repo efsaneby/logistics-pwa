@@ -13,12 +13,14 @@ import { createClient } from "@/lib/supabase/client";
 import { Truck, Calculator, Save } from "lucide-react";
 
 export default function TripCard({
+  initialDate,
   onTripSaved,
 }: {
+  initialDate?: string;
   onTripSaved?: () => void;
 }) {
-  const [departure, setDeparture] = useState("");
-  const [returnTime, setReturnTime] = useState("");
+  const [departure, setDeparture] = useState(initialDate ? `${initialDate}T08:00` : "");
+  const [returnTime, setReturnTime] = useState(initialDate ? `${initialDate}T17:00` : "");
   const [isMultiDay, setIsMultiDay] = useState(false);
   const [result, setResult] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -77,7 +79,7 @@ export default function TripCard({
       <CardHeader className="bg-slate-900 text-white rounded-t-lg">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Truck className="w-5 h-5 text-amber-400" />
-          Verblijfskosten Berekenen
+          Trip Allowance
         </CardTitle>
       </CardHeader>
       <CardContent className="p-5 space-y-4">
@@ -93,7 +95,7 @@ export default function TripCard({
               !isMultiDay ? "bg-white shadow text-slate-900" : "text-slate-500"
             }`}
           >
-            Eendaagse Rit
+            Single-day trip
           </button>
           <button
             type="button"
@@ -105,7 +107,7 @@ export default function TripCard({
               isMultiDay ? "bg-white shadow text-slate-900" : "text-slate-500"
             }`}
           >
-            Meerdaagse Rit
+            Multi-day trip
           </button>
         </div>
 
@@ -150,14 +152,14 @@ export default function TripCard({
           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center gap-2"
         >
           <Calculator className="w-4 h-4" />
-          Berekenen
+          Calculate allowance
         </Button>
 
         {/* Sonuç Alanı */}
         {result !== null && (
           <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-center space-y-2">
             <span className="text-xs text-emerald-700 font-semibold uppercase tracking-wider block">
-              Net Berekende Vergoeding
+              Calculated allowance
             </span>
             <span className="text-3xl font-extrabold text-emerald-900 block">
               € {result.toFixed(2).replace(".", ",")}

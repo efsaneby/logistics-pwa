@@ -113,7 +113,7 @@ export default function TripList({ refreshKey }: { refreshKey: number }) {
         {trips.length > 0 && (
           <div className="flex justify-between items-center bg-amber-50 border border-amber-200 p-3 rounded-lg mb-3">
             <span className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-              <Euro className="w-4 h-4" /> Totaal Vergoeding:
+              <Euro className="w-4 h-4" /> Total allowance:
             </span>
             <span className="text-lg font-extrabold text-amber-900">
               € {totalAllowance.toFixed(2).replace(".", ",")}
@@ -124,7 +124,7 @@ export default function TripList({ refreshKey }: { refreshKey: number }) {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-6 space-y-2 text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin text-amber-500" />
-            <p className="text-xs">Ritten laden...</p>
+            <p className="text-xs">Loading trips...</p>
           </div>
         ) : errorMsg ? (
           <div className="text-center py-4 space-y-2">

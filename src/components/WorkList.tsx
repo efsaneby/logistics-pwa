@@ -121,7 +121,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
           <div className="grid grid-cols-2 gap-2 bg-slate-100 p-3 rounded-lg mb-3 text-center text-xs">
             <div>
               <span className="text-slate-500 block font-medium">
-                Normaal Uren
+                Regular Hours
               </span>
               <span className="text-base font-bold text-slate-800">
                 {totalNormal.toFixed(1)} u
@@ -129,7 +129,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
             </div>
             <div>
               <span className="text-amber-700 block font-medium">
-                Overwerk 130%
+                Overtime 130%
               </span>
               <span className="text-base font-bold text-amber-700">
                 {totalOvertime.toFixed(1)} u
@@ -141,7 +141,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-6 space-y-2 text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin text-amber-500" />
-            <p className="text-xs">Uren laden...</p>
+            <p className="text-xs">Loading work hours...</p>
           </div>
         ) : errorMsg ? (
           <div className="text-center py-4 space-y-2">

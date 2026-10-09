@@ -10,12 +10,14 @@ import { createClient } from "@/lib/supabase/client";
 import { Clock, Calculator, Save } from "lucide-react";
 
 export default function WorkCard({
+  initialDate,
   onWorkSaved,
 }: {
+  initialDate?: string;
   onWorkSaved?: () => void;
 }) {
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startTime, setStartTime] = useState(initialDate ? `${initialDate}T08:00` : "");
+  const [endTime, setEndTime] = useState(initialDate ? `${initialDate}T16:00` : "");
   const [pauseMinutes, setPauseMinutes] = useState("60");
   const [result, setResult] = useState<WorkHoursResult | null>(null);
   const [saving, setSaving] = useState(false);
@@ -154,7 +156,7 @@ export default function WorkCard({
           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center justify-center gap-2 touch-manipulation py-3"
         >
           <Calculator className="w-4 h-4" />
-          Uren Berekenen
+          Calculate hours
         </Button>
 
         {result !== null && (
@@ -162,7 +164,7 @@ export default function WorkCard({
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">
-                  Totaal
+                  Total
                 </span>
                 <span className="text-lg font-bold text-slate-800">
                   {result.totalHours} u
@@ -170,7 +172,7 @@ export default function WorkCard({
               </div>
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">
-                  Normaal
+                  Regular
                 </span>
                 <span className="text-lg font-bold text-slate-800">
                   {result.normalHours} u
@@ -178,7 +180,7 @@ export default function WorkCard({
               </div>
               <div>
                 <span className="text-[10px] text-amber-700 uppercase block font-semibold">
-                  Overwerk 130%
+                  Overtime 130%
                 </span>
                 <span className="text-lg font-bold text-amber-700">
                   {result.overtime130} u
