@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="nl">
+    <html lang="en">
       <body className="antialiased bg-slate-50">{children}</body>
     </html>
   );
