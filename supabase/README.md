@@ -24,6 +24,10 @@ contents of these files in filename order:
 
 `migrations/20261010230000_add_2026_monthly_loonheffing_table.sql`
 
+`migrations/20261011000000_add_trip_travel_cost.sql`
+
+`migrations/20261011010000_backfill_trip_travel_cost.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -31,6 +35,9 @@ profile and records.
 The third migration adds private, per-driver payroll deduction settings.
 The fourth migration lets each driver mark which deductions reduce their table salary.
 The fifth migration adds the official 2026 white monthly loonheffing table and the profile options for loonheffingskorting and AOW category. It includes all wage brackets from the source PDF.
+The sixth migration adds an optional one-way travel reimbursement to each driver profile and stores the rate used on each trip. Existing trips default to €0. The seventh migration fills zero-valued historical trip rates from each driver's current profile rate, once. A trip adds one one-way amount on its departure date and one on its return date; these may fall in different months.
+
+If the first five migrations have already been applied, run `migrations/20261011000000_add_trip_travel_cost.sql` and then `migrations/20261011010000_backfill_trip_travel_cost.sql` for this change. If the sixth migration has already run, run only the seventh migration to populate historical trips.
 
 In **Authentication → Providers**, enable Email sign-in. Set the project Site
 URL and allowed redirect URLs to the deployed app URL (and the local development

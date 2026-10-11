@@ -18,6 +18,7 @@ interface DriverProfile {
   scale: string;
   step: number;
   contract_hours_per_week: number;
+  travel_cost_per_one_way: number;
   apply_loonheffingskorting: boolean;
   aow_category: "under_aow" | "aow_before_1946" | "aow_1946_or_later";
   single_elderly_credit: boolean;
@@ -111,6 +112,7 @@ function ProfileForm({
   const [scale, setScale] = useState(initialProfile?.scale ?? "");
   const [step, setStep] = useState(initialProfile ? String(initialProfile.step) : "");
   const [weeklyHours, setWeeklyHours] = useState(initialProfile ? String(initialProfile.contract_hours_per_week) : "");
+  const [travelCostPerOneWay, setTravelCostPerOneWay] = useState(String(initialProfile?.travel_cost_per_one_way ?? 0));
   const [applyLoonheffingskorting, setApplyLoonheffingskorting] = useState(initialProfile?.apply_loonheffingskorting ?? true);
   const [aowCategory, setAowCategory] = useState<DriverProfile["aow_category"]>(initialProfile?.aow_category ?? "under_aow");
   const [singleElderlyCredit, setSingleElderlyCredit] = useState(initialProfile?.single_elderly_credit ?? false);
@@ -177,6 +179,7 @@ function ProfileForm({
       scale,
       step: Number(step),
       contract_hours_per_week: Number(weeklyHours),
+      travel_cost_per_one_way: Number(travelCostPerOneWay || 0),
       apply_loonheffingskorting: applyLoonheffingskorting,
       aow_category: aowCategory,
       single_elderly_credit: singleElderlyCredit,
@@ -231,6 +234,7 @@ function ProfileForm({
           <div className="space-y-1.5"><Label htmlFor="salary-step">Step (trede)</Label><select id="salary-step" required value={step} disabled={loadingRates || steps.length === 0} onChange={(event) => setStep(event.target.value)} className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="" disabled>Select step</option>{steps.map((rate) => <option key={rate.step} value={rate.step}>{rate.step}</option>)}</select></div>
         </div>
         <div className="space-y-1.5"><Label htmlFor="weekly-hours">Contracted hours per week</Label><Input id="weekly-hours" type="number" min="1" max="60" step="0.5" required value={weeklyHours} onChange={(event) => setWeeklyHours(event.target.value)} /></div>
+        <div className="space-y-1.5"><Label htmlFor="travel-cost-per-one-way">Reiskosten per enkele reis (€)</Label><Input id="travel-cost-per-one-way" type="number" min="0" step="0.01" value={travelCostPerOneWay} onChange={(event) => setTravelCostPerOneWay(event.target.value)} /><p className="text-xs text-slate-500">Leave at €0 if you do not receive travel reimbursement. Each trip uses this amount for departure and return.</p></div>
         <section className="space-y-3 rounded-xl border border-slate-200 p-3">
           <div><h2 className="text-sm font-semibold text-slate-800">Tax table settings</h2><p className="mt-1 text-xs text-slate-500">Used to select the correct 2026 monthly loonheffing table column.</p></div>
           <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={applyLoonheffingskorting} onChange={(event) => setApplyLoonheffingskorting(event.target.checked)} className="mt-0.5" /><span>Apply loonheffingskorting</span></label>
@@ -292,7 +296,7 @@ export default function AccountGate({ children }: { children: ReactNode }) {
       return;
     }
     let alive = true;
-    supabase.from("driver_profiles").select("user_id, first_name, last_name, scale, step, contract_hours_per_week, apply_loonheffingskorting, aow_category, single_elderly_credit").eq("user_id", session.user.id).maybeSingle().then(({ data, error: profileError }) => {
+    supabase.from("driver_profiles").select("user_id, first_name, last_name, scale, step, contract_hours_per_week, travel_cost_per_one_way, apply_loonheffingskorting, aow_category, single_elderly_credit").eq("user_id", session.user.id).maybeSingle().then(({ data, error: profileError }) => {
       if (!alive) return;
       if (profileError) setError(profileError.message);
       else setProfile(data as DriverProfile | null);

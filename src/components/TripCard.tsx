@@ -23,11 +23,12 @@ export default function TripCard({
   const [returnTime, setReturnTime] = useState(initialDate ? `${initialDate}T17:00` : "");
   const [isMultiDay, setIsMultiDay] = useState(false);
   const [result, setResult] = useState<number | null>(null);
+  const [travelCostPerOneWay, setTravelCostPerOneWay] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   const supabase = createClient();
 
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     if (!departure || !returnTime) return;
 
     const depDate = new Date(departure);
@@ -35,6 +36,20 @@ export default function TripCard({
 
     if (retDate <= depDate) {
       alert("Dönüş zamanı çıkış zamanından sonra olmalıdır!");
+      return;
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      alert(authError?.message ?? "Sign in to calculate travel reimbursement.");
+      return;
+    }
+    const { data: profile, error: profileError } = await supabase.from("driver_profiles")
+      .select("travel_cost_per_one_way")
+      .eq("user_id", authData.user.id)
+      .single();
+    if (profileError || !profile) {
+      alert(profileError?.message ?? "Could not load the travel reimbursement from your profile.");
       return;
     }
 
@@ -46,10 +61,11 @@ export default function TripCard({
     }
 
     setResult(allowance);
+    setTravelCostPerOneWay(Number(profile.travel_cost_per_one_way) || 0);
   };
 
   const handleSave = async () => {
-    if (result === null || !departure || !returnTime) return;
+    if (result === null || travelCostPerOneWay === null || !departure || !returnTime) return;
 
     setSaving(true);
     const { error } = await supabase.from("trip_cards").insert([
@@ -58,6 +74,7 @@ export default function TripCard({
         return_time: new Date(returnTime).toISOString(),
         is_multi_day: isMultiDay,
         calculated_allowance: result,
+        travel_cost_per_one_way: travelCostPerOneWay,
       },
     ]);
 
@@ -70,6 +87,7 @@ export default function TripCard({
       setDeparture("");
       setReturnTime("");
       setResult(null);
+      setTravelCostPerOneWay(null);
       onTripSaved?.();
     }
   };
@@ -165,8 +183,9 @@ export default function TripCard({
               € {result.toFixed(2).replace(".", ",")}
             </span>
 
+            <p className="text-sm text-emerald-800">Reiskosten: €{travelCostPerOneWay?.toFixed(2)} vertrek + €{travelCostPerOneWay?.toFixed(2)} terug = €{((travelCostPerOneWay ?? 0) * 2).toFixed(2)}</p>
             <Button
-              onClick={handleSave}
+              onClick={() => { void handleSave(); }}
               disabled={saving}
               variant="outline"
               className="w-full mt-2 border-emerald-600 text-emerald-700 hover:bg-emerald-100 flex items-center gap-2"

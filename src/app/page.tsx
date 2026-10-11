@@ -10,7 +10,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Truck, Wallet } from "
 import { getSalaryScaleRatesForDate } from "@/lib/supabase/salary-scales";
 import type { SalaryScaleRate } from "@/lib/supabase/salary-scales";
 
-type DayRecord = { date: string; hours: number; overtimeHours: number; allowance: number };
+type DayRecord = { date: string; hours: number; overtimeHours: number; allowance: number; travelCost: number };
 type PayrollSummary = {
   monthlyBase: number;
   overtimePay: number;
@@ -38,11 +38,11 @@ function CalendarHome() {
     const supabase = createClient();
     const [workResult, tripResult] = await Promise.all([
       supabase.from("work_cards").select("date, normal_hours, overtime_130"),
-      supabase.from("trip_cards").select("departure_time, return_time, is_multi_day, calculated_allowance"),
+      supabase.from("trip_cards").select("departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way"),
     ]);
     const byDate = new Map<string, DayRecord>();
     for (const item of workResult.data ?? []) {
-      const row = byDate.get(item.date) ?? { date: item.date, hours: 0, overtimeHours: 0, allowance: 0 };
+      const row = byDate.get(item.date) ?? { date: item.date, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
       const overtime = Number(item.overtime_130 || 0);
       row.hours += Number(item.normal_hours || 0) + overtime;
       row.overtimeHours += overtime;
@@ -68,10 +68,19 @@ function CalendarHome() {
         const date = new Date(firstDay);
         date.setDate(date.getDate() + index);
         const key = toDateKey(date);
-        const row = byDate.get(key) ?? { date: key, hours: 0, overtimeHours: 0, allowance: 0 };
+        const row = byDate.get(key) ?? { date: key, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
         row.allowance += amount;
         byDate.set(key, row);
       });
+      const travelAmount = Number(item.travel_cost_per_one_way || 0);
+      const departureKey = toDateKey(departure);
+      const departureRow = byDate.get(departureKey) ?? { date: departureKey, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
+      departureRow.travelCost += travelAmount;
+      byDate.set(departureKey, departureRow);
+      const returnKey = toDateKey(returnTime);
+      const returnRow = byDate.get(returnKey) ?? { date: returnKey, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
+      returnRow.travelCost += travelAmount;
+      byDate.set(returnKey, returnRow);
     }
     setRecords([...byDate.values()]);
 
@@ -156,10 +165,11 @@ function CalendarHome() {
     .sort((a, b) => a.date.localeCompare(b.date)), [records, month]);
   const today = toDateKey(new Date());
   const monthAllowance = monthRecords.reduce((sum, record) => sum + record.allowance, 0);
+  const monthTravelCost = monthRecords.reduce((sum, record) => sum + record.travelCost, 0);
   const fixedDeductionTotal = payroll?.fixedDeductions.reduce((sum, deduction) => sum + deduction.value, 0) ?? 0;
   const btWithholding = (payroll?.overtimePay ?? 0) * btWithholdingRate;
   const netEstimate = payroll
-    ? payroll.monthlyBase + payroll.overtimePay + monthAllowance - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
+    ? payroll.monthlyBase + payroll.overtimePay + monthAllowance + monthTravelCost - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
     : 0;
   const currency = (value: number) => new Intl.NumberFormat("en-NL", { style: "currency", currency: "EUR" }).format(value);
   const chooseDay = (day: number) => {
@@ -196,12 +206,14 @@ function CalendarHome() {
                 <span>{day}</span>
                 {record && record.hours > 0 && <span className={`w-full truncate text-[9px] leading-3 ${active ? "text-amber-200" : "text-amber-700"}`}>{`${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}`}</span>}
                 {record && record.allowance > 0 && <span className={`w-full truncate text-[9px] leading-3 ${active ? "text-emerald-200" : "text-emerald-700"}`}>€{record.allowance.toFixed(0)}</span>}
+                {record && record.travelCost > 0 && <span className={`w-full truncate text-[9px] leading-3 ${active ? "text-sky-200" : "text-sky-700"}`}>R €{record.travelCost.toFixed(0)}</span>}
               </button>;
             })}
           </div>
           <div className="mt-4 flex justify-center gap-5 text-[11px] text-slate-500">
             <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Hours worked</span>
             <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Trip allowance</span>
+            <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" /> Reiskosten</span>
           </div>
         </section>
 
@@ -228,6 +240,7 @@ function CalendarHome() {
               <p className="flex justify-between gap-3 font-medium text-rose-700"><span>BT withholding (37.56% + 12.91%)</span><span>-{currency(btWithholding)}</span></p>
             </div>
             <p className="flex justify-between gap-3 text-emerald-700"><span>Trip allowances</span><span>{currency(monthAllowance)}</span></p>
+            <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
             {payroll.fixedDeductions.length > 0 && <div className="space-y-1 border-t border-slate-100 pt-2">
               <p className="font-medium text-slate-700">Monthly employee deductions</p>
               {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · reduces table salary" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
@@ -245,16 +258,18 @@ function CalendarHome() {
           <table className="w-full table-fixed text-left text-xs">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="w-[38%] px-3 py-3 font-semibold">Date</th>
-                <th className="w-[30%] px-2 py-3 text-center font-semibold">Hours worked</th>
-                <th className="w-[32%] px-3 py-3 text-right font-semibold">Trip allowance</th>
+                <th className="w-[28%] px-2 py-3 font-semibold">Date</th>
+                <th className="w-[23%] px-1 py-3 text-center font-semibold">Hours</th>
+                <th className="w-[25%] px-1 py-3 text-right font-semibold">Allowance</th>
+                <th className="w-[24%] px-2 py-3 text-right font-semibold">Reiskosten</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {monthRecords.length === 0 ? <tr><td colSpan={3} className="px-3 py-6 text-center text-slate-500">No entries for this month.</td></tr> : monthRecords.map((record) => <tr key={record.date}>
-                <td className="px-3 py-3 font-medium text-slate-700">{new Date(`${record.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
-                <td className="px-2 py-3 text-center font-medium text-amber-700">{record.hours > 0 ? `${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}` : "—"}</td>
-                <td className="px-3 py-3 text-right font-medium text-emerald-700">{record.allowance > 0 ? `€${record.allowance.toFixed(2)}` : "—"}</td>
+              {monthRecords.length === 0 ? <tr><td colSpan={4} className="px-3 py-6 text-center text-slate-500">No entries for this month.</td></tr> : monthRecords.map((record) => <tr key={record.date}>
+                <td className="px-2 py-3 font-medium text-slate-700">{new Date(`${record.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
+                <td className="px-1 py-3 text-center font-medium text-amber-700">{record.hours > 0 ? `${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}` : "—"}</td>
+                <td className="px-1 py-3 text-right font-medium text-emerald-700">{record.allowance > 0 ? `€${record.allowance.toFixed(2)}` : "—"}</td>
+                <td className="px-2 py-3 text-right font-medium text-sky-700">{record.travelCost > 0 ? `€${record.travelCost.toFixed(2)}` : "—"}</td>
               </tr>)}
             </tbody>
           </table>
