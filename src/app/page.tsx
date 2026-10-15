@@ -275,9 +275,9 @@ function CalendarHome() {
                 const allowanceLabel = record && record.allowance > 0 ? compactCurrency(record.allowance) : "geen verblijfskosten";
                 const travelLabel = record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "geen reiskosten";
                 return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}, ${allowanceLabel}, ${travelLabel}${hasNote ? ", heeft een notitie" : ""}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
-                  <span className="relative mb-0.5 flex w-full justify-center">
+                  <span className="mb-0.5 flex w-full items-center justify-center gap-1">
                     {day}
-                    {hasNote && <StickyNote aria-hidden="true" className="absolute right-0 h-3 w-3 text-violet-600" />}
+                    {hasNote && <StickyNote aria-hidden="true" className="h-3 w-3 shrink-0 text-violet-600" />}
                   </span>
                   <span className="w-full truncate rounded bg-amber-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-amber-800">{record && record.hours > 0 ? hoursLabel : "—"}</span>
                   <span className="w-full truncate rounded bg-emerald-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-emerald-800">{record && record.allowance > 0 ? compactCurrency(record.allowance) : "—"}</span>
