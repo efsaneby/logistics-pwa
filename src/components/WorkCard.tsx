@@ -11,15 +11,35 @@ import { Clock, Calculator, Save } from "lucide-react";
 
 export default function WorkCard({
   initialDate,
+  initialWork,
   onWorkSaved,
 }: {
   initialDate?: string;
+  initialWork?: {
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    break_minutes: number;
+  };
   onWorkSaved?: () => void;
 }) {
-  const [startTime, setStartTime] = useState(initialDate ? `${initialDate}T08:00` : "");
-  const [endTime, setEndTime] = useState(initialDate ? `${initialDate}T16:00` : "");
-  const [pauseMinutes, setPauseMinutes] = useState("60");
-  const [result, setResult] = useState<WorkHoursResult | null>(null);
+  const toDateTimeInput = (date: string, time: string) => `${date}T${time.slice(0, 5)}`;
+  const [startTime, setStartTime] = useState(initialWork
+    ? toDateTimeInput(initialWork.date, initialWork.start_time)
+    : initialDate ? `${initialDate}T08:00` : "");
+  const [endTime, setEndTime] = useState(initialWork
+    ? toDateTimeInput(initialWork.date, initialWork.end_time)
+    : initialDate ? `${initialDate}T16:00` : "");
+  const [pauseMinutes, setPauseMinutes] = useState(String(initialWork?.break_minutes ?? 60));
+  const [result, setResult] = useState<WorkHoursResult | null>(() => {
+    if (!initialWork) return null;
+    return calculateWorkHours(
+      new Date(toDateTimeInput(initialWork.date, initialWork.start_time)),
+      new Date(toDateTimeInput(initialWork.date, initialWork.end_time)),
+      initialWork.break_minutes,
+    );
+  });
   const [saving, setSaving] = useState(false);
 
   const handleCalculate = () => {
@@ -63,28 +83,29 @@ export default function WorkCard({
       const startFormatted = startDate.toTimeString().split(" ")[0];
       const endFormatted = endDate.toTimeString().split(" ")[0];
 
-      const { error } = await supabase.from("work_cards").insert([
-        {
-          date: localDate,
-          start_time: startFormatted,
-          end_time: endFormatted,
-          break_minutes: Number(pauseMinutes) || 0,
-          normal_hours: result.normalHours,
-          overtime_130: result.overtime130,
-        },
-      ]);
+      const workData = {
+        date: localDate,
+        start_time: startFormatted,
+        end_time: endFormatted,
+        break_minutes: Number(pauseMinutes) || 0,
+        normal_hours: result.normalHours,
+        overtime_130: result.overtime130,
+      };
+      const { error } = initialWork
+        ? await supabase.from("work_cards").update(workData).eq("id", initialWork.id)
+        : await supabase.from("work_cards").insert([workData]);
 
       if (error) {
         alert("Kaydedilirken hata oluştu: " + error.message);
       } else {
-        alert("Çalışma saati başarıyla kaydedildi! ⏱️");
+        alert(initialWork ? "Çalışma kaydı güncellendi." : "Çalışma saati başarıyla kaydedildi! ⏱️");
         setStartTime("");
         setEndTime("");
         setResult(null);
         onWorkSaved?.();
       }
-    } catch (err: any) {
-      alert("Hata: " + (err?.message || "Bilinmeyen bir hata oluştu."));
+    } catch (error) {
+      alert("Hata: " + (error instanceof Error ? error.message : "Bilinmeyen bir hata oluştu."));
     } finally {
       setSaving(false);
     }
@@ -95,7 +116,7 @@ export default function WorkCard({
       <CardHeader className="bg-slate-900 text-white rounded-t-lg">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Clock className="w-5 h-5 text-amber-400" />
-          Uren Registratie (Saat Kaydı)
+        {initialWork ? "Çalışma kaydını düzenle" : "Uren Registratie (Saat Kaydı)"}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-5 space-y-4">
@@ -195,7 +216,7 @@ export default function WorkCard({
               className="w-full border-amber-600 text-amber-800 hover:bg-amber-100 flex items-center justify-center gap-2 touch-manipulation"
             >
               <Save className="w-4 h-4" />
-              {saving ? "Opslaan..." : "Uren Opslaan"}
+              {saving ? "Opslaan..." : initialWork ? "Değişiklikleri kaydet" : "Uren Opslaan"}
             </Button>
           </div>
         )}

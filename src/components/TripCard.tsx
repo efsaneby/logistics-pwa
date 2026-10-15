@@ -14,16 +14,36 @@ import { Truck, Calculator, Save } from "lucide-react";
 
 export default function TripCard({
   initialDate,
+  initialTrip,
   onTripSaved,
 }: {
   initialDate?: string;
+  initialTrip?: {
+    id: string;
+    departure_time: string;
+    return_time: string;
+    is_multi_day: boolean;
+    calculated_allowance: number;
+    travel_cost_per_one_way: number;
+  };
   onTripSaved?: () => void;
 }) {
-  const [departure, setDeparture] = useState(initialDate ? `${initialDate}T08:00` : "");
-  const [returnTime, setReturnTime] = useState(initialDate ? `${initialDate}T17:00` : "");
-  const [isMultiDay, setIsMultiDay] = useState(false);
-  const [result, setResult] = useState<number | null>(null);
-  const [travelCostPerOneWay, setTravelCostPerOneWay] = useState<number | null>(null);
+  const toDateTimeInput = (value: string) => {
+    const date = new Date(value);
+    const pad = (part: number) => String(part).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+  const [departure, setDeparture] = useState(initialTrip
+    ? toDateTimeInput(initialTrip.departure_time)
+    : initialDate ? `${initialDate}T08:00` : "");
+  const [returnTime, setReturnTime] = useState(initialTrip
+    ? toDateTimeInput(initialTrip.return_time)
+    : initialDate ? `${initialDate}T17:00` : "");
+  const [isMultiDay, setIsMultiDay] = useState(initialTrip?.is_multi_day ?? false);
+  const [result, setResult] = useState<number | null>(initialTrip ? Number(initialTrip.calculated_allowance) : null);
+  const [travelCostPerOneWay, setTravelCostPerOneWay] = useState<number | null>(
+    initialTrip ? Number(initialTrip.travel_cost_per_one_way) : null,
+  );
   const [saving, setSaving] = useState(false);
 
   const supabase = createClient();
@@ -39,18 +59,22 @@ export default function TripCard({
       return;
     }
 
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
-      alert(authError?.message ?? "Sign in to calculate travel reimbursement.");
-      return;
-    }
-    const { data: profile, error: profileError } = await supabase.from("driver_profiles")
-      .select("travel_cost_per_one_way")
-      .eq("user_id", authData.user.id)
-      .single();
-    if (profileError || !profile) {
-      alert(profileError?.message ?? "Could not load the travel reimbursement from your profile.");
-      return;
+    let travelRate = travelCostPerOneWay;
+    if (travelRate === null) {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        alert(authError?.message ?? "Sign in to calculate travel reimbursement.");
+        return;
+      }
+      const { data: profile, error: profileError } = await supabase.from("driver_profiles")
+        .select("travel_cost_per_one_way")
+        .eq("user_id", authData.user.id)
+        .single();
+      if (profileError || !profile) {
+        alert(profileError?.message ?? "Could not load the travel reimbursement from your profile.");
+        return;
+      }
+      travelRate = Number(profile.travel_cost_per_one_way) || 0;
     }
 
     let allowance = 0;
@@ -61,34 +85,52 @@ export default function TripCard({
     }
 
     setResult(allowance);
-    setTravelCostPerOneWay(Number(profile.travel_cost_per_one_way) || 0);
+    setTravelCostPerOneWay(travelRate);
   };
 
   const handleSave = async () => {
     if (result === null || travelCostPerOneWay === null || !departure || !returnTime) return;
 
+    if (initialTrip) {
+      const originalDeparture = new Date(initialTrip.departure_time);
+      const originalReturn = new Date(initialTrip.return_time);
+      const updatedDeparture = new Date(departure);
+      const updatedReturn = new Date(returnTime);
+      const dateKey = (date: Date) =>
+        `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      const originalWasSingleDay = dateKey(originalDeparture) === dateKey(originalReturn);
+      const updatedSpansMultipleDays = dateKey(updatedDeparture) !== dateKey(updatedReturn);
+      if (originalWasSingleDay && updatedSpansMultipleDays && !confirm(
+        "Bu düzenleme seferi birden fazla güne yayacak. Değişiklik tüm günlerdeki harcırah ve reiskosten tutarlarını etkileyecek. Devam edilsin mi?",
+      )) return;
+    }
+
     setSaving(true);
-    const { error } = await supabase.from("trip_cards").insert([
-      {
+    try {
+      const tripData = {
         departure_time: new Date(departure).toISOString(),
         return_time: new Date(returnTime).toISOString(),
         is_multi_day: isMultiDay,
         calculated_allowance: result,
         travel_cost_per_one_way: travelCostPerOneWay,
-      },
-    ]);
-
-    setSaving(false);
-
-    if (error) {
-      alert("Kaydedilirken bir hata oluştu: " + error.message);
-    } else {
-      alert("Sefer başarıyla kaydedildi! 🚚");
-      setDeparture("");
-      setReturnTime("");
-      setResult(null);
-      setTravelCostPerOneWay(null);
-      onTripSaved?.();
+      };
+      const { error } = initialTrip
+        ? await supabase.from("trip_cards").update(tripData).eq("id", initialTrip.id)
+        : await supabase.from("trip_cards").insert([tripData]);
+      if (error) {
+        alert("Kaydedilirken bir hata oluştu: " + error.message);
+      } else {
+        alert(initialTrip ? "Sefer güncellendi." : "Sefer başarıyla kaydedildi! 🚚");
+        setDeparture("");
+        setReturnTime("");
+        setResult(null);
+        setTravelCostPerOneWay(null);
+        onTripSaved?.();
+      }
+    } catch (error) {
+      alert("Kaydedilirken bir hata oluştu: " + (error instanceof Error ? error.message : "Bilinmeyen hata."));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -142,7 +184,10 @@ export default function TripCard({
               id="departure"
               type="datetime-local"
               value={departure}
-              onChange={(e) => setDeparture(e.target.value)}
+              onChange={(e) => {
+                setDeparture(e.target.value);
+                setResult(null);
+              }}
               className="mt-1"
             />
           </div>
@@ -158,7 +203,10 @@ export default function TripCard({
               id="returnTime"
               type="datetime-local"
               value={returnTime}
-              onChange={(e) => setReturnTime(e.target.value)}
+              onChange={(e) => {
+                setReturnTime(e.target.value);
+                setResult(null);
+              }}
               className="mt-1"
             />
           </div>
@@ -170,8 +218,24 @@ export default function TripCard({
           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center gap-2"
         >
           <Calculator className="w-4 h-4" />
-          Calculate allowance
+          {initialTrip ? "Recalculate allowance" : "Calculate allowance"}
         </Button>
+
+        {(travelCostPerOneWay !== null || initialTrip) && (
+          <div className="space-y-1.5">
+            <Label htmlFor="trip-travel-cost" className="text-xs font-semibold text-slate-600">
+              Reiskosten per enkele reis (€)
+            </Label>
+            <Input
+              id="trip-travel-cost"
+              type="number"
+              min="0"
+              step="0.01"
+              value={travelCostPerOneWay ?? 0}
+              onChange={(event) => setTravelCostPerOneWay(Number(event.target.value) || 0)}
+            />
+          </div>
+        )}
 
         {/* Sonuç Alanı */}
         {result !== null && (
@@ -191,7 +255,7 @@ export default function TripCard({
               className="w-full mt-2 border-emerald-600 text-emerald-700 hover:bg-emerald-100 flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              {saving ? "Opslaan..." : "Rit Opslaan"}
+              {saving ? "Opslaan..." : initialTrip ? "Seferi güncelle" : "Rit Opslaan"}
             </Button>
           </div>
         )}

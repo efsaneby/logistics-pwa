@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import TripCard from "@/components/TripCard";
-import WorkCard from "@/components/WorkCard";
+import DayDetails from "@/components/DayDetails";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import AccountGate from "@/components/AccountGate";
-import { MEERDAAGSE_MATRIX_2026 } from "@/lib/calculator/verblijfskosten";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Truck, Wallet } from "lucide-react";
+import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
+import { ChevronLeft, ChevronRight, Wallet } from "lucide-react";
 import { getSalaryScaleRatesForDate } from "@/lib/supabase/salary-scales";
 import type { SalaryScaleRate } from "@/lib/supabase/salary-scales";
 
@@ -29,7 +29,7 @@ const toDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth(
 function CalendarHome() {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [entryType, setEntryType] = useState<"work" | "trip" | null>(null);
+  const [showPayrollDetails, setShowPayrollDetails] = useState(false);
   const [records, setRecords] = useState<DayRecord[]>([]);
   const [payroll, setPayroll] = useState<PayrollSummary | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -55,23 +55,18 @@ function CalendarHome() {
 
       const firstDay = new Date(departure.getFullYear(), departure.getMonth(), departure.getDate());
       const lastDay = new Date(returnTime.getFullYear(), returnTime.getMonth(), returnTime.getDate());
-      const dayCount = Math.round((lastDay.getTime() - firstDay.getTime()) / 86_400_000) + 1;
-      const dailyAmounts = item.is_multi_day && dayCount > 1
-        ? Array.from({ length: dayCount }, (_, index) => {
-            if (index === 0) return MEERDAAGSE_MATRIX_2026.eersteDag[departure.getHours() as keyof typeof MEERDAAGSE_MATRIX_2026.eersteDag] || 0;
-            if (index === dayCount - 1) return MEERDAAGSE_MATRIX_2026.laatsteDag[returnTime.getHours() as keyof typeof MEERDAAGSE_MATRIX_2026.laatsteDag] || 0;
-            return MEERDAAGSE_MATRIX_2026.tussenliggendeDag;
-          })
-        : [Number(item.calculated_allowance || 0)];
-
-      dailyAmounts.forEach((amount, index) => {
-        const date = new Date(firstDay);
-        date.setDate(date.getDate() + index);
+      for (const date = new Date(firstDay); date <= lastDay; date.setDate(date.getDate() + 1)) {
         const key = toDateKey(date);
         const row = byDate.get(key) ?? { date: key, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
-        row.allowance += amount;
+        row.allowance += getTripDailyAllowance(
+          departure,
+          returnTime,
+          item.is_multi_day,
+          Number(item.calculated_allowance || 0),
+          key,
+        );
         byDate.set(key, row);
-      });
+      }
       const travelAmount = Number(item.travel_cost_per_one_way || 0);
       const departureKey = toDateKey(departure);
       const departureRow = byDate.get(departureKey) ?? { date: departureKey, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
@@ -172,13 +167,8 @@ function CalendarHome() {
     ? payroll.monthlyBase + payroll.overtimePay + monthAllowance + monthTravelCost - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
     : 0;
   const currency = (value: number) => new Intl.NumberFormat("en-NL", { style: "currency", currency: "EUR" }).format(value);
-  const chooseDay = (day: number) => {
-    setSelectedDate(toDateKey(new Date(month.getFullYear(), month.getMonth(), day)));
-    setEntryType(null);
-  };
   const saved = () => {
     setRefreshKey((value) => value + 1);
-    setEntryType(null);
   };
 
   return (
@@ -189,91 +179,83 @@ function CalendarHome() {
           <p className="mt-1 text-xs text-slate-500">Work hours and trip allowance</p>
         </header>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <button aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
-            <h2 className="text-base font-semibold text-slate-900">{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</h2>
-            <button aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {weekdays.map((day) => <div key={day} className="pb-2 text-[11px] font-medium text-slate-400">{day}</div>)}
-            {calendarDays.map((day, index) => {
-              if (day === null) return <div key={`empty-${index}`} />;
-              const key = toDateKey(new Date(month.getFullYear(), month.getMonth(), day));
-              const record = recordMap.get(key);
-              const active = selectedDate === key;
-              return <button key={key} onClick={() => chooseDay(day)} aria-label={`${month.toLocaleDateString("en-US", { month: "long" })} ${day}`} className={`flex min-h-16 flex-col items-center justify-start gap-0.5 rounded-xl px-0.5 pt-1.5 text-xs transition ${active ? "bg-slate-900 font-semibold text-white" : key === today ? "bg-amber-50 font-semibold text-slate-900" : "text-slate-700 hover:bg-slate-100"}`}>
-                <span>{day}</span>
-                {record && record.hours > 0 && <span className={`w-full truncate text-[9px] leading-3 ${active ? "text-amber-200" : "text-amber-700"}`}>{`${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}`}</span>}
-                {record && record.allowance > 0 && <span className={`w-full truncate text-[9px] leading-3 ${active ? "text-emerald-200" : "text-emerald-700"}`}>€{record.allowance.toFixed(0)}</span>}
-                {record && record.travelCost > 0 && <span className={`w-full truncate text-[9px] leading-3 ${active ? "text-sky-200" : "text-sky-700"}`}>R €{record.travelCost.toFixed(0)}</span>}
-              </button>;
-            })}
-          </div>
-          <div className="mt-4 flex justify-center gap-5 text-[11px] text-slate-500">
-            <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Hours worked</span>
-            <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Trip allowance</span>
-            <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" /> Reiskosten</span>
-          </div>
-        </section>
+        <button
+          type="button"
+          onClick={() => setShowPayrollDetails((visible) => !visible)}
+          aria-expanded={showPayrollDetails}
+          className="mb-4 w-full rounded-2xl bg-slate-900 p-4 text-left text-white shadow-sm transition hover:bg-slate-800"
+        >
+          <span className="flex items-center gap-2 text-xs font-medium text-slate-300">
+            <Wallet className="h-4 w-4 text-amber-400" />
+            {month.toLocaleDateString("en-US", { month: "long", year: "numeric" })} · Estimated net pay
+          </span>
+          <span className="mt-1 block text-3xl font-bold">
+            {payroll?.error ? "Unavailable" : payroll ? currency(netEstimate) : "…"}
+          </span>
+          <span className="mt-1 block text-xs text-slate-300">
+            {payroll?.error ? payroll.error : "Tap to view estimate breakdown"}
+          </span>
+        </button>
 
-        {selectedDate && <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800"><CalendarDays className="h-4 w-4 text-amber-500" />{new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
-          {!entryType ? <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => setEntryType("work")} className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:border-amber-400 hover:bg-amber-50"><Clock3 className="h-4 w-4 text-amber-500" /> Add work hours</button>
-            <button onClick={() => setEntryType("trip")} className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:border-emerald-400 hover:bg-emerald-50"><Truck className="h-4 w-4 text-emerald-600" /> Add trip</button>
-          </div> : <>
-            <button onClick={() => setEntryType(null)} className="mb-3 text-xs text-slate-500 underline">Back</button>
-            {entryType === "work" ? <WorkCard key={`work-${selectedDate}`} initialDate={selectedDate} onWorkSaved={saved} /> : <TripCard key={`trip-${selectedDate}`} initialDate={selectedDate} onTripSaved={saved} />}
-          </>}
-        </section>}
-
-        <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2"><Wallet className="h-4 w-4 text-amber-500" /><h2 className="text-sm font-semibold text-slate-900">{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })} Pay Estimate</h2></div>
-          {payroll?.error ? <p className="text-xs text-red-600">{payroll.error}</p> : payroll ? <div className="space-y-2 text-sm">
-            <p className="flex justify-between gap-3 text-slate-600"><span>Monthly salary ({payroll.scale}{payroll.step})</span><span>{currency(payroll.monthlyBase)}</span></p>
-            <p className="flex justify-between gap-3 text-slate-600"><span>Overtime pay (130%)</span><span>{currency(payroll.overtimePay)}</span></p>
-            <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Gross pay estimate</span><span>{currency(payroll.monthlyBase + payroll.overtimePay)}</span></p>
-            <div className="space-y-1 border-t border-slate-100 pt-2 text-slate-600">
-              <p className="flex justify-between gap-3"><span>Table salary (tabelloon)</span><span>{currency(payroll.tableSalary)}</span></p>
-              <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing table deduction</span><span>-{currency(payroll.loonheffingTable)}</span></p>
-              <p className="flex justify-between gap-3 font-medium text-rose-700"><span>BT withholding (37.56% + 12.91%)</span><span>-{currency(btWithholding)}</span></p>
+        {showPayrollDetails && payroll && !payroll.error && (
+          <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-semibold text-slate-900">Pay estimate details</h2>
+            <div className="space-y-2 text-sm">
+              <p className="flex justify-between gap-3 text-slate-600"><span>Monthly salary ({payroll.scale}{payroll.step})</span><span>{currency(payroll.monthlyBase)}</span></p>
+              <p className="flex justify-between gap-3 text-slate-600"><span>Overtime pay (130%)</span><span>{currency(payroll.overtimePay)}</span></p>
+              <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Gross pay estimate</span><span>{currency(payroll.monthlyBase + payroll.overtimePay)}</span></p>
+              <div className="space-y-1 border-t border-slate-100 pt-2 text-slate-600">
+                <p className="flex justify-between gap-3"><span>Table salary (tabelloon)</span><span>{currency(payroll.tableSalary)}</span></p>
+                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing table deduction</span><span>-{currency(payroll.loonheffingTable)}</span></p>
+                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>BT withholding (37.56% + 12.91%)</span><span>-{currency(btWithholding)}</span></p>
+              </div>
+              <p className="flex justify-between gap-3 text-emerald-700"><span>Trip allowances</span><span>{currency(monthAllowance)}</span></p>
+              <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
+              {payroll.fixedDeductions.length > 0 && <div className="space-y-1 border-t border-slate-100 pt-2">
+                <p className="font-medium text-slate-700">Monthly employee deductions</p>
+                {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · reduces table salary" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
+                <p className="flex justify-between gap-3 font-medium text-slate-800"><span>Total fixed deductions</span><span>-{currency(fixedDeductionTotal)}</span></p>
+              </div>}
+              <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">BT is estimated at a combined 50.47% on overtime pay. Trip allowances are included in the net estimate. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} percentage deduction(s) are saved but excluded because their calculation bases are not configured.`}</p>
             </div>
-            <p className="flex justify-between gap-3 text-emerald-700"><span>Trip allowances</span><span>{currency(monthAllowance)}</span></p>
-            <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
-            {payroll.fixedDeductions.length > 0 && <div className="space-y-1 border-t border-slate-100 pt-2">
-              <p className="font-medium text-slate-700">Monthly employee deductions</p>
-              {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · reduces table salary" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
-              <p className="flex justify-between gap-3 font-medium text-slate-800"><span>Total fixed deductions</span><span>-{currency(fixedDeductionTotal)}</span></p>
-            </div>}
-            <p className="flex justify-between gap-3 border-t border-slate-200 pt-3 text-base font-bold text-slate-900"><span>Estimated net pay</span><span>{currency(netEstimate)}</span></p>
-            <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">BT is estimated at a combined 50.47% on overtime pay. Trip allowances are included in the net estimate. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} percentage deduction(s) are saved but excluded because their calculation bases are not configured.`}</p>
-          </div> : <p className="text-xs text-slate-500">Loading monthly estimate…</p>}
-        </section>
+          </section>
+        )}
 
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-semibold text-slate-900">{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })} Summary</h2>
-          </div>
-          <table className="w-full table-fixed text-left text-xs">
-            <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="w-[28%] px-2 py-3 font-semibold">Date</th>
-                <th className="w-[23%] px-1 py-3 text-center font-semibold">Hours</th>
-                <th className="w-[25%] px-1 py-3 text-right font-semibold">Allowance</th>
-                <th className="w-[24%] px-2 py-3 text-right font-semibold">Reiskosten</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {monthRecords.length === 0 ? <tr><td colSpan={4} className="px-3 py-6 text-center text-slate-500">No entries for this month.</td></tr> : monthRecords.map((record) => <tr key={record.date}>
-                <td className="px-2 py-3 font-medium text-slate-700">{new Date(`${record.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
-                <td className="px-1 py-3 text-center font-medium text-amber-700">{record.hours > 0 ? `${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}` : "—"}</td>
-                <td className="px-1 py-3 text-right font-medium text-emerald-700">{record.allowance > 0 ? `€${record.allowance.toFixed(2)}` : "—"}</td>
-                <td className="px-2 py-3 text-right font-medium text-sky-700">{record.travelCost > 0 ? `€${record.travelCost.toFixed(2)}` : "—"}</td>
-              </tr>)}
-            </tbody>
-          </table>
-        </section>
+        {selectedDate ? (
+          <>
+            <Button variant="ghost" className="mb-3" onClick={() => setSelectedDate(null)}>
+              <ChevronLeft className="mr-1 h-4 w-4" /> Back to calendar
+            </Button>
+            <DayDetails date={selectedDate} refreshKey={refreshKey} onChanged={saved} />
+          </>
+        ) : (
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <button aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
+              <h2 className="text-base font-semibold text-slate-900">{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</h2>
+              <button aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {weekdays.map((day) => <div key={day} className="pb-2 text-[11px] font-medium text-slate-400">{day}</div>)}
+              {calendarDays.map((day, index) => {
+                if (day === null) return <div key={`empty-${index}`} />;
+                const key = toDateKey(new Date(month.getFullYear(), month.getMonth(), day));
+                const record = recordMap.get(key);
+                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${month.toLocaleDateString("en-US", { month: "long" })} ${day}`} className={`flex min-h-16 flex-col items-center justify-start gap-0.5 rounded-xl px-0.5 pt-1.5 text-xs transition ${key === today ? "bg-amber-50 font-semibold text-slate-900" : "text-slate-700 hover:bg-slate-100"}`}>
+                  <span>{day}</span>
+                  {record && record.hours > 0 && <span className="w-full truncate text-[9px] leading-3 text-amber-700">{`${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}`}</span>}
+                  {record && record.allowance > 0 && <span className="w-full truncate text-[9px] leading-3 text-emerald-700">€{record.allowance.toFixed(0)}</span>}
+                  {record && record.travelCost > 0 && <span className="w-full truncate text-[9px] leading-3 text-sky-700">R €{record.travelCost.toFixed(0)}</span>}
+                </button>;
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Hours worked</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Trip allowance</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" /> Reiskosten</span>
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );
