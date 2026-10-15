@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DayDetails from "@/components/DayDetails";
 import { Button } from "@/components/ui/button";
@@ -202,7 +201,7 @@ function CalendarHome() {
     <main className="min-h-screen bg-slate-50 px-4 py-5">
       <div className="mx-auto w-full max-w-lg">
         <header className="mb-5 text-center">
-          <h1><Image src="/trucklog.png" alt="TruckLog" width={96} height={96} className="mx-auto h-24 w-24 rounded-2xl" priority /></h1>
+          <h1 className="text-xl font-bold text-slate-900">TruckLog</h1>
           <p className="mt-1 text-xs text-slate-500">Uren en ritvergoedingen</p>
         </header>
 
