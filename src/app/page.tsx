@@ -1,12 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DayDetails from "@/components/DayDetails";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import AccountGate from "@/components/AccountGate";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
-import { ChevronLeft, ChevronRight, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, StickyNote, Wallet } from "lucide-react";
 import { getSalaryScaleRatesForDate } from "@/lib/supabase/salary-scales";
 import type { SalaryScaleRate } from "@/lib/supabase/salary-scales";
 
@@ -35,15 +36,31 @@ function CalendarHome() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showPayrollDetails, setShowPayrollDetails] = useState(false);
   const [records, setRecords] = useState<DayRecord[]>([]);
+  const [noteDates, setNoteDates] = useState<Set<string>>(() => new Set());
+  const [notesError, setNotesError] = useState<string | null>(null);
   const [payroll, setPayroll] = useState<PayrollSummary | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const loadCalendar = useCallback(async () => {
     const supabase = createClient();
-    const [workResult, tripResult] = await Promise.all([
+    const monthStart = toDateKey(month);
+    const monthEnd = toDateKey(new Date(month.getFullYear(), month.getMonth() + 1, 1));
+    const [workResult, tripResult, notesResult] = await Promise.all([
       supabase.from("work_cards").select("date, normal_hours, overtime_130"),
       supabase.from("trip_cards").select("departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way"),
+      supabase.from("driver_day_notes")
+        .select("date")
+        .gte("date", monthStart)
+        .lt("date", monthEnd),
     ]);
+    if (notesResult.error) {
+      setNoteDates(new Set());
+      setNotesError("Dagnotities konden niet worden geladen.");
+      console.error("Dagnotities laden mislukt:", notesResult.error);
+    } else {
+      setNoteDates(new Set((notesResult.data ?? []).map((note) => note.date)));
+      setNotesError(null);
+    }
     const byDate = new Map<string, DayRecord>();
     for (const item of workResult.data ?? []) {
       const row = byDate.get(item.date) ?? { date: item.date, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
@@ -174,7 +191,8 @@ function CalendarHome() {
   const compactCurrency = (value: number) => new Intl.NumberFormat("nl-NL", {
     style: "currency",
     currency: "EUR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
   const saved = () => {
     setRefreshKey((value) => value + 1);
@@ -184,7 +202,7 @@ function CalendarHome() {
     <main className="min-h-screen bg-slate-50 px-4 py-5">
       <div className="mx-auto w-full max-w-lg">
         <header className="mb-5 text-center">
-          <h1 className="text-xl font-bold text-slate-900">RitLogboek</h1>
+          <h1><Image src="/trucklog.png" alt="TruckLog" width={96} height={96} className="mx-auto h-24 w-24 rounded-2xl" priority /></h1>
           <p className="mt-1 text-xs text-slate-500">Uren en ritvergoedingen</p>
         </header>
 
@@ -250,24 +268,30 @@ function CalendarHome() {
                 if (day === null) return <div key={`empty-${index}`} />;
                 const key = toDateKey(new Date(month.getFullYear(), month.getMonth(), day));
                 const record = recordMap.get(key);
+                const hasNote = noteDates.has(key);
                 const dateLabel = `${day} ${month.toLocaleDateString("nl-NL", { month: "long" })}`;
                 const hoursLabel = record && record.hours > 0
                   ? formatHours(record.hours)
                   : "geen uren";
                 const allowanceLabel = record && record.allowance > 0 ? compactCurrency(record.allowance) : "geen verblijfskosten";
                 const travelLabel = record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "geen reiskosten";
-                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}, ${allowanceLabel}, ${travelLabel}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
-                  <span className="mb-0.5">{day}</span>
+                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}, ${allowanceLabel}, ${travelLabel}${hasNote ? ", heeft een notitie" : ""}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
+                  <span className="relative mb-0.5 flex w-full justify-center">
+                    {day}
+                    {hasNote && <StickyNote aria-hidden="true" className="absolute right-0 h-3 w-3 text-violet-600" />}
+                  </span>
                   <span className="w-full truncate rounded bg-amber-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-amber-800">{record && record.hours > 0 ? hoursLabel : "—"}</span>
                   <span className="w-full truncate rounded bg-emerald-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-emerald-800">{record && record.allowance > 0 ? compactCurrency(record.allowance) : "—"}</span>
                   <span className="w-full truncate rounded bg-sky-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-sky-800">{record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "—"}</span>
                 </button>;
               })}
             </div>
+            {notesError && <p role="alert" className="mt-3 text-center text-xs text-red-600">{notesError}</p>}
             <div className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
               <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Gewerkte uren</span>
               <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Verblijfskosten</span>
               <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" /> Reiskosten</span>
+              <span className="flex items-center gap-1.5"><StickyNote aria-hidden="true" className="h-3 w-3 text-violet-600" /> Notitie</span>
             </div>
           </section>
         )}

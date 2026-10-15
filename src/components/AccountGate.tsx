@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
@@ -94,7 +95,7 @@ function AuthForm() {
 
   return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8">
     <section className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h1 className="text-xl font-bold text-slate-900">RitLogboek</h1>
+      <h1><Image src="/trucklog.png" alt="TruckLog" width={96} height={96} className="h-24 w-24 rounded-2xl" priority /></h1>
       <p className="mt-1 text-sm text-slate-500">{mode === "sign-in" ? "Log in op je account" : "Maak een chauffeursaccount aan"}</p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div className="space-y-1.5"><Label htmlFor="account-email">E-mailadres</Label><Input id="account-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></div>

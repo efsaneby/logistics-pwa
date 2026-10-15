@@ -156,6 +156,7 @@ export default function DayDetails({
       setNote(trimmedNote);
       setSavedNote(trimmedNote);
       setNoteMessage(trimmedNote ? "Notitie opgeslagen." : "Notitie verwijderd.");
+      onChanged();
     } catch (saveError) {
       console.error("Dagnotitie opslaan mislukt:", saveError);
       setNoteError(saveError instanceof Error ? saveError.message : "De notitie kon niet worden opgeslagen.");

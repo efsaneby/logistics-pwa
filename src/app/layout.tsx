@@ -2,13 +2,17 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "RitLogboek",
+  title: "TruckLog",
   description: "Uren, ritten en vergoedingen voor chauffeurs in Nederland",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/trucklog.png",
+    apple: "/trucklog.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "RitLogboek",
+    title: "TruckLog",
   },
 };
 

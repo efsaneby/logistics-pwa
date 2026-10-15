@@ -1,6 +1,6 @@
 {
-  "name": "RitLogboek",
-  "short_name": "RitLogboek",
+  "name": "TruckLog",
+  "short_name": "TruckLog",
   "description": "Uren, ritten en vergoedingen voor chauffeurs in Nederland",
   "start_url": "/",
   "display": "standalone",
@@ -8,13 +8,8 @@
   "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
+      "src": "/trucklog.png",
+      "sizes": "225x225",
       "type": "image/png"
     }
   ]
