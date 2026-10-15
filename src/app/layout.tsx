@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Logistics Allowance 2026",
-  description: "CAO Beroepsgoederenvervoer Verblijfskosten",
+  title: "RitLogboek",
+  description: "Uren, ritten en vergoedingen voor chauffeurs in Nederland",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "LogisticsApp",
+    title: "RitLogboek",
   },
 };
 
@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="nl-NL">
       <body className="antialiased bg-slate-50">{children}</body>
     </html>
   );

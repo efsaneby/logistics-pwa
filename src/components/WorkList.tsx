@@ -38,7 +38,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
         setWorks(data || []);
       }
     } catch (err: any) {
-      setErrorMsg("Bağlantı kurulamadı.");
+      setErrorMsg("Er kon geen verbinding worden gemaakt.");
     } finally {
       setLoading(false);
     }
@@ -57,19 +57,19 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
   }, [refreshKey]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Bu çalışma kaydını silmek istediğinden emin misin?")) return;
+    if (!confirm("Weet je zeker dat je deze werktijd wilt verwijderen?")) return;
 
     try {
       const supabase = createClient();
       const { error } = await supabase.from("work_cards").delete().eq("id", id);
 
       if (error) {
-        alert("Silinirken hata oluştu: " + error.message);
+        alert("Verwijderen mislukt: " + error.message);
       } else {
         setWorks((prev) => prev.filter((w) => w.id !== id));
       }
     } catch (err: any) {
-      alert("Hata: " + err?.message);
+      alert("Er is een fout opgetreden: " + (err instanceof Error ? err.message : "Onbekende fout."));
     }
   };
 
@@ -82,17 +82,17 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
     0,
   );
 
-  // Saat formatlama fonksiyonu ("16:00:00" -> "16:00")
+  // Formatteer een tijd zoals "16:00:00" als "16:00".
   const formatTime = (timeString: string) => {
     if (!timeString) return "--:--";
 
-    // Eğer string "16:00:00" biçimindeyse saat ve dakikayı al
+    // Haal uren en minuten uit een waarde zoals "16:00:00".
     if (timeString.includes(":")) {
       const parts = timeString.split(":");
       return `${parts[0]}:${parts[1]}`;
     }
 
-    // Eğer ISO tarih formatındaysa
+    // Verwerk ook ISO-datumwaarden.
     try {
       const d = new Date(timeString);
       return d.toLocaleTimeString("nl-NL", {
@@ -109,10 +109,10 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
       <CardHeader className="bg-slate-800 text-white rounded-t-lg flex flex-row items-center justify-between py-3">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <Clock className="w-4 h-4 text-amber-400" />
-          Mijn Werktijden (Çalışma Geçmişi)
+          Mijn werktijden
         </CardTitle>
         <span className="text-xs bg-slate-700 px-2.5 py-1 rounded-full text-amber-300 font-bold">
-          {works.length} Dagen
+          {works.length} dagen
         </span>
       </CardHeader>
 
@@ -121,7 +121,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
           <div className="grid grid-cols-2 gap-2 bg-slate-100 p-3 rounded-lg mb-3 text-center text-xs">
             <div>
               <span className="text-slate-500 block font-medium">
-                Regular Hours
+                Normale uren
               </span>
               <span className="text-base font-bold text-slate-800">
                 {totalNormal.toFixed(1)} u
@@ -129,7 +129,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
             </div>
             <div>
               <span className="text-amber-700 block font-medium">
-                Overtime 130%
+                Overwerk 130%
               </span>
               <span className="text-base font-bold text-amber-700">
                 {totalOvertime.toFixed(1)} u
@@ -141,7 +141,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-6 space-y-2 text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin text-amber-500" />
-            <p className="text-xs">Loading work hours...</p>
+            <p className="text-xs">Werktijden laden…</p>
           </div>
         ) : errorMsg ? (
           <div className="text-center py-4 space-y-2">
@@ -157,10 +157,10 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
           </div>
         ) : works.length === 0 ? (
           <p className="text-xs text-center text-slate-500 py-4">
-            Nog geen uren opgeslagen.
+            Er zijn nog geen uren opgeslagen.
           </p>
         ) : (
-          <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+          <div className="space-y-2.5 max-h-75 overflow-y-auto pr-1">
             {works.map((work) => (
               <div
                 key={work.id}
@@ -169,7 +169,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                 <div className="space-y-1">
                   <div className="flex items-center gap-1 font-semibold text-slate-800">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{work.date}</span>
+                    <span>{new Date(`${work.date}T12:00:00`).toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
                   </div>
                   <div className="text-slate-500">
                     {formatTime(work.start_time)} - {formatTime(work.end_time)}{" "}
@@ -180,11 +180,11 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <span className="block font-bold text-slate-700">
-                      {work.normal_hours}u N
+                      {work.normal_hours} u normaal
                     </span>
                     {Number(work.overtime_130) > 0 && (
                       <span className="block font-bold text-amber-600 text-[11px]">
-                        +{work.overtime_130}u (130%)
+                        +{work.overtime_130} u (130%)
                       </span>
                     )}
                   </div>

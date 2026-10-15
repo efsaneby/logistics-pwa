@@ -1,7 +1,7 @@
 {
-  "name": "CAO Logistics Calculator",
-  "short_name": "LogisticsApp",
-  "description": "Verblijfskosten & Uren Registratie CAO Beroepsgoederenvervoer 2026",
+  "name": "RitLogboek",
+  "short_name": "RitLogboek",
+  "description": "Uren, ritten en vergoedingen voor chauffeurs in Nederland",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

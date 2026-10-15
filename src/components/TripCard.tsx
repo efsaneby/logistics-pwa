@@ -55,7 +55,7 @@ export default function TripCard({
     const retDate = new Date(returnTime);
 
     if (retDate <= depDate) {
-      alert("Dönüş zamanı çıkış zamanından sonra olmalıdır!");
+      alert("De aankomsttijd moet na de vertrektijd liggen.");
       return;
     }
 
@@ -63,7 +63,7 @@ export default function TripCard({
     if (travelRate === null) {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData.user) {
-        alert(authError?.message ?? "Sign in to calculate travel reimbursement.");
+        alert(authError?.message ?? "Log in om de reiskostenvergoeding te berekenen.");
         return;
       }
       const { data: profile, error: profileError } = await supabase.from("driver_profiles")
@@ -71,7 +71,7 @@ export default function TripCard({
         .eq("user_id", authData.user.id)
         .single();
       if (profileError || !profile) {
-        alert(profileError?.message ?? "Could not load the travel reimbursement from your profile.");
+        alert(profileError?.message ?? "De reiskostenvergoeding kon niet uit je profiel worden geladen.");
         return;
       }
       travelRate = Number(profile.travel_cost_per_one_way) || 0;
@@ -101,7 +101,7 @@ export default function TripCard({
       const originalWasSingleDay = dateKey(originalDeparture) === dateKey(originalReturn);
       const updatedSpansMultipleDays = dateKey(updatedDeparture) !== dateKey(updatedReturn);
       if (originalWasSingleDay && updatedSpansMultipleDays && !confirm(
-        "Bu düzenleme seferi birden fazla güne yayacak. Değişiklik tüm günlerdeki harcırah ve reiskosten tutarlarını etkileyecek. Devam edilsin mi?",
+        "Deze wijziging spreidt de rit over meerdere dagen. De wijziging heeft invloed op de verblijfskosten en reiskosten van alle dagen. Wil je doorgaan?",
       )) return;
     }
 
@@ -118,9 +118,9 @@ export default function TripCard({
         ? await supabase.from("trip_cards").update(tripData).eq("id", initialTrip.id)
         : await supabase.from("trip_cards").insert([tripData]);
       if (error) {
-        alert("Kaydedilirken bir hata oluştu: " + error.message);
+        alert("Opslaan mislukt: " + error.message);
       } else {
-        alert(initialTrip ? "Sefer güncellendi." : "Sefer başarıyla kaydedildi! 🚚");
+        alert(initialTrip ? "De rit is bijgewerkt." : "De rit is opgeslagen! 🚚");
         setDeparture("");
         setReturnTime("");
         setResult(null);
@@ -128,7 +128,7 @@ export default function TripCard({
         onTripSaved?.();
       }
     } catch (error) {
-      alert("Kaydedilirken bir hata oluştu: " + (error instanceof Error ? error.message : "Bilinmeyen hata."));
+      alert("Opslaan mislukt: " + (error instanceof Error ? error.message : "Onbekende fout."));
     } finally {
       setSaving(false);
     }
@@ -139,11 +139,11 @@ export default function TripCard({
       <CardHeader className="bg-slate-900 text-white rounded-t-lg">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Truck className="w-5 h-5 text-amber-400" />
-          Trip Allowance
+          Ritvergoeding
         </CardTitle>
       </CardHeader>
       <CardContent className="p-5 space-y-4">
-        {/* Sefer Tipi Seçimi */}
+        {/* Kies het type rit */}
         <div className="flex bg-slate-100 p-1 rounded-lg">
           <button
             type="button"
@@ -155,7 +155,7 @@ export default function TripCard({
               !isMultiDay ? "bg-white shadow text-slate-900" : "text-slate-500"
             }`}
           >
-            Single-day trip
+            Eendaagse rit
           </button>
           <button
             type="button"
@@ -167,18 +167,18 @@ export default function TripCard({
               isMultiDay ? "bg-white shadow text-slate-900" : "text-slate-500"
             }`}
           >
-            Multi-day trip
+            Meerdaagse rit
           </button>
         </div>
 
-        {/* Tarih / Saat Girişleri */}
+        {/* Datum en tijd */}
         <div className="space-y-3">
           <div>
             <Label
               htmlFor="departure"
               className="text-xs font-semibold text-slate-600"
             >
-              Vertrek (Çıkış Tarihi ve Saati)
+              Vertrekdatum en -tijd
             </Label>
             <Input
               id="departure"
@@ -197,7 +197,7 @@ export default function TripCard({
               htmlFor="returnTime"
               className="text-xs font-semibold text-slate-600"
             >
-              Aankomst (Dönüş Tarihi ve Saati)
+              Aankomstdatum en -tijd
             </Label>
             <Input
               id="returnTime"
@@ -212,13 +212,13 @@ export default function TripCard({
           </div>
         </div>
 
-        {/* Hesapla Butonu */}
+        {/* Bereken de vergoeding */}
         <Button
           onClick={handleCalculate}
           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center gap-2"
         >
           <Calculator className="w-4 h-4" />
-          {initialTrip ? "Recalculate allowance" : "Calculate allowance"}
+          {initialTrip ? "Vergoeding opnieuw berekenen" : "Vergoeding berekenen"}
         </Button>
 
         {(travelCostPerOneWay !== null || initialTrip) && (
@@ -237,17 +237,17 @@ export default function TripCard({
           </div>
         )}
 
-        {/* Sonuç Alanı */}
+        {/* Resultaat */}
         {result !== null && (
           <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-center space-y-2">
             <span className="text-xs text-emerald-700 font-semibold uppercase tracking-wider block">
-              Calculated allowance
+              Berekende verblijfskosten
             </span>
             <span className="text-3xl font-extrabold text-emerald-900 block">
               € {result.toFixed(2).replace(".", ",")}
             </span>
 
-            <p className="text-sm text-emerald-800">Reiskosten: €{travelCostPerOneWay?.toFixed(2)} vertrek + €{travelCostPerOneWay?.toFixed(2)} terug = €{((travelCostPerOneWay ?? 0) * 2).toFixed(2)}</p>
+            <p className="text-sm text-emerald-800">Reiskosten: € {travelCostPerOneWay?.toFixed(2)} heen + € {travelCostPerOneWay?.toFixed(2)} terug = € {((travelCostPerOneWay ?? 0) * 2).toFixed(2)}</p>
             <Button
               onClick={() => { void handleSave(); }}
               disabled={saving}
@@ -255,7 +255,7 @@ export default function TripCard({
               className="w-full mt-2 border-emerald-600 text-emerald-700 hover:bg-emerald-100 flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              {saving ? "Opslaan..." : initialTrip ? "Seferi güncelle" : "Rit Opslaan"}
+              {saving ? "Opslaan…" : initialTrip ? "Rit bijwerken" : "Rit opslaan"}
             </Button>
           </div>
         )}

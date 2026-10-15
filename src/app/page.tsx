@@ -22,9 +22,13 @@ type PayrollSummary = {
   step: number;
   error?: string;
 };
-const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const weekdays = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
 const btWithholdingRate = 0.3756 + 0.1291;
 const toDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const formatHours = (hours: number) => {
+  const totalMinutes = Math.round(hours * 60);
+  return `${Math.floor(totalMinutes / 60)}h${String(totalMinutes % 60).padStart(2, "0")}`;
+};
 
 function CalendarHome() {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -89,14 +93,14 @@ function CalendarHome() {
       supabase.from("driver_deductions").select("name, calculation_type, value, reduces_table_salary").eq("user_id", authData.user.id),
     ]);
     if (profileError || deductionsError || !profile) {
-      setPayroll({ monthlyBase: 0, overtimePay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: "", step: 0, error: profileError?.message ?? deductionsError?.message ?? "Complete your driver profile to see the estimate." });
+      setPayroll({ monthlyBase: 0, overtimePay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: "", step: 0, error: profileError?.message ?? deductionsError?.message ?? "Vul eerst je chauffeursprofiel in om de schatting te bekijken." });
       return;
     }
     const effectiveDate = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`;
     try {
       const salaryTable = await getSalaryScaleRatesForDate(effectiveDate);
       const rate = (salaryTable.rates as SalaryScaleRate[]).find((item) => item.scale === profile.scale && item.step === profile.step);
-      if (!rate) throw new Error(`No salary rate found for ${profile.scale}${profile.step}.`);
+      if (!rate) throw new Error(`Salarisschaal ${profile.scale}${profile.step} is niet gevonden.`);
       const monthPrefix = effectiveDate.slice(0, 7);
       const monthOvertime = [...byDate.values()].filter((row) => row.date.startsWith(monthPrefix)).reduce((sum, row) => sum + row.overtimeHours, 0);
       const monthlyBase = Number(rate.monthly_gross) * (Number(profile.contract_hours_per_week) / Number(salaryTable.version.full_time_hours_per_week));
@@ -108,7 +112,7 @@ function CalendarHome() {
         .gte("effective_to", effectiveDate)
         .maybeSingle();
       if (taxVersionError) throw taxVersionError;
-      if (!taxVersion) throw new Error(`No loonheffing table is available for ${effectiveDate}.`);
+      if (!taxVersion) throw new Error(`Er is geen loonheffingstabel beschikbaar voor ${effectiveDate}.`);
       const { data: taxRow, error: taxRowError } = await supabase.from("loonheffing_table_rows")
         .select("tabelloon, under_aow_no_credit, under_aow_with_credit, aow_before_1946_no_credit, aow_before_1946_credit_excl_single, aow_before_1946_credit_incl_single, aow_1946_or_later_no_credit, aow_1946_or_later_credit_excl_single, aow_1946_or_later_credit_incl_single")
         .eq("version_id", taxVersion.id)
@@ -117,7 +121,7 @@ function CalendarHome() {
         .limit(1)
         .maybeSingle();
       if (taxRowError) throw taxRowError;
-      if (!taxRow) throw new Error("No loonheffing table bracket was found for this table salary.");
+      if (!taxRow) throw new Error("Er is geen loonheffingstabel gevonden voor dit tabelloon.");
       const taxColumn = profile.aow_category === "under_aow"
         ? (profile.apply_loonheffingskorting ? "under_aow_with_credit" : "under_aow_no_credit")
         : profile.aow_category === "aow_before_1946"
@@ -134,7 +138,7 @@ function CalendarHome() {
         step: profile.step,
       });
     } catch (loadError) {
-      setPayroll({ monthlyBase: 0, overtimePay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: profile.scale, step: profile.step, error: loadError instanceof Error ? loadError.message : "Could not load the salary table." });
+      setPayroll({ monthlyBase: 0, overtimePay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: profile.scale, step: profile.step, error: loadError instanceof Error ? loadError.message : "De salaristabel kon niet worden geladen." });
     }
   }, [month]);
 
@@ -166,7 +170,12 @@ function CalendarHome() {
   const netEstimate = payroll
     ? payroll.monthlyBase + payroll.overtimePay + monthAllowance + monthTravelCost - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
     : 0;
-  const currency = (value: number) => new Intl.NumberFormat("en-NL", { style: "currency", currency: "EUR" }).format(value);
+  const currency = (value: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(value);
+  const compactCurrency = (value: number) => new Intl.NumberFormat("nl-NL", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(value);
   const saved = () => {
     setRefreshKey((value) => value + 1);
   };
@@ -175,8 +184,8 @@ function CalendarHome() {
     <main className="min-h-screen bg-slate-50 px-4 py-5">
       <div className="mx-auto w-full max-w-lg">
         <header className="mb-5 text-center">
-          <h1 className="text-xl font-bold text-slate-900">Logistics Assistant 2026</h1>
-          <p className="mt-1 text-xs text-slate-500">Work hours and trip allowance</p>
+          <h1 className="text-xl font-bold text-slate-900">RitLogboek</h1>
+          <p className="mt-1 text-xs text-slate-500">Uren en ritvergoedingen</p>
         </header>
 
         <button
@@ -187,36 +196,36 @@ function CalendarHome() {
         >
           <span className="flex items-center gap-2 text-xs font-medium text-slate-300">
             <Wallet className="h-4 w-4 text-amber-400" />
-            {month.toLocaleDateString("en-US", { month: "long", year: "numeric" })} · Estimated net pay
+            {month.toLocaleDateString("nl-NL", { month: "long", year: "numeric" })} · Geschat nettoloon
           </span>
           <span className="mt-1 block text-3xl font-bold">
-            {payroll?.error ? "Unavailable" : payroll ? currency(netEstimate) : "…"}
+            {payroll?.error ? "Niet beschikbaar" : payroll ? currency(netEstimate) : "…"}
           </span>
           <span className="mt-1 block text-xs text-slate-300">
-            {payroll?.error ? payroll.error : "Tap to view estimate breakdown"}
+            {payroll?.error ? payroll.error : "Tik voor de berekening"}
           </span>
         </button>
 
         {showPayrollDetails && payroll && !payroll.error && (
           <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Pay estimate details</h2>
+            <h2 className="mb-3 text-sm font-semibold text-slate-900">Details nettoloon</h2>
             <div className="space-y-2 text-sm">
-              <p className="flex justify-between gap-3 text-slate-600"><span>Monthly salary ({payroll.scale}{payroll.step})</span><span>{currency(payroll.monthlyBase)}</span></p>
-              <p className="flex justify-between gap-3 text-slate-600"><span>Overtime pay (130%)</span><span>{currency(payroll.overtimePay)}</span></p>
-              <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Gross pay estimate</span><span>{currency(payroll.monthlyBase + payroll.overtimePay)}</span></p>
+              <p className="flex justify-between gap-3 text-slate-600"><span>Maandsalaris ({payroll.scale}{payroll.step})</span><span>{currency(payroll.monthlyBase)}</span></p>
+              <p className="flex justify-between gap-3 text-slate-600"><span>Overwerkvergoeding (130%)</span><span>{currency(payroll.overtimePay)}</span></p>
+              <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Geschat brutoloon</span><span>{currency(payroll.monthlyBase + payroll.overtimePay)}</span></p>
               <div className="space-y-1 border-t border-slate-100 pt-2 text-slate-600">
-                <p className="flex justify-between gap-3"><span>Table salary (tabelloon)</span><span>{currency(payroll.tableSalary)}</span></p>
-                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing table deduction</span><span>-{currency(payroll.loonheffingTable)}</span></p>
-                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>BT withholding (37.56% + 12.91%)</span><span>-{currency(btWithholding)}</span></p>
+                <p className="flex justify-between gap-3"><span>Tabelloon</span><span>{currency(payroll.tableSalary)}</span></p>
+                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing</span><span>-{currency(payroll.loonheffingTable)}</span></p>
+                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Bijzonder tarief (50,47%)</span><span>-{currency(btWithholding)}</span></p>
               </div>
-              <p className="flex justify-between gap-3 text-emerald-700"><span>Trip allowances</span><span>{currency(monthAllowance)}</span></p>
+              <p className="flex justify-between gap-3 text-emerald-700"><span>Verblijfskosten</span><span>{currency(monthAllowance)}</span></p>
               <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
               {payroll.fixedDeductions.length > 0 && <div className="space-y-1 border-t border-slate-100 pt-2">
-                <p className="font-medium text-slate-700">Monthly employee deductions</p>
-                {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · reduces table salary" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
-                <p className="flex justify-between gap-3 font-medium text-slate-800"><span>Total fixed deductions</span><span>-{currency(fixedDeductionTotal)}</span></p>
+                <p className="font-medium text-slate-700">Maandelijkse inhoudingen</p>
+                {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · verlaagt tabelloon" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
+                <p className="flex justify-between gap-3 font-medium text-slate-800"><span>Totaal inhoudingen</span><span>-{currency(fixedDeductionTotal)}</span></p>
               </div>}
-              <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">BT is estimated at a combined 50.47% on overtime pay. Trip allowances are included in the net estimate. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} percentage deduction(s) are saved but excluded because their calculation bases are not configured.`}</p>
+              <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">Het bijzonder tarief op overwerk is geschat op 50,47%. Verblijfskosten zijn opgenomen in het nettoloon. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} procentuele inhouding(en) zijn opgeslagen maar niet meegenomen, omdat de berekeningsbasis niet is ingesteld.`}</p>
             </div>
           </section>
         )}
@@ -224,16 +233,16 @@ function CalendarHome() {
         {selectedDate ? (
           <>
             <Button variant="ghost" className="mb-3" onClick={() => setSelectedDate(null)}>
-              <ChevronLeft className="mr-1 h-4 w-4" /> Back to calendar
+              <ChevronLeft className="mr-1 h-4 w-4" /> Terug naar de kalender
             </Button>
             <DayDetails date={selectedDate} refreshKey={refreshKey} onChanged={saved} />
           </>
         ) : (
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <button aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
-              <h2 className="text-base font-semibold text-slate-900">{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</h2>
-              <button aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
+              <button aria-label="Vorige maand" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
+              <h2 className="text-base font-semibold text-slate-900">{month.toLocaleDateString("nl-NL", { month: "long", year: "numeric" })}</h2>
+              <button aria-label="Volgende maand" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
             </div>
             <div className="grid grid-cols-7 gap-1 text-center">
               {weekdays.map((day) => <div key={day} className="pb-2 text-[11px] font-medium text-slate-400">{day}</div>)}
@@ -241,17 +250,23 @@ function CalendarHome() {
                 if (day === null) return <div key={`empty-${index}`} />;
                 const key = toDateKey(new Date(month.getFullYear(), month.getMonth(), day));
                 const record = recordMap.get(key);
-                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${month.toLocaleDateString("en-US", { month: "long" })} ${day}`} className={`flex min-h-16 flex-col items-center justify-start gap-0.5 rounded-xl px-0.5 pt-1.5 text-xs transition ${key === today ? "bg-amber-50 font-semibold text-slate-900" : "text-slate-700 hover:bg-slate-100"}`}>
-                  <span>{day}</span>
-                  {record && record.hours > 0 && <span className="w-full truncate text-[9px] leading-3 text-amber-700">{`${Math.floor(record.hours)}h${String(Math.round((record.hours % 1) * 60)).padStart(2, "0")}`}</span>}
-                  {record && record.allowance > 0 && <span className="w-full truncate text-[9px] leading-3 text-emerald-700">€{record.allowance.toFixed(0)}</span>}
-                  {record && record.travelCost > 0 && <span className="w-full truncate text-[9px] leading-3 text-sky-700">R €{record.travelCost.toFixed(0)}</span>}
+                const dateLabel = `${day} ${month.toLocaleDateString("nl-NL", { month: "long" })}`;
+                const hoursLabel = record && record.hours > 0
+                  ? formatHours(record.hours)
+                  : "geen uren";
+                const allowanceLabel = record && record.allowance > 0 ? compactCurrency(record.allowance) : "geen verblijfskosten";
+                const travelLabel = record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "geen reiskosten";
+                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}, ${allowanceLabel}, ${travelLabel}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
+                  <span className="mb-0.5">{day}</span>
+                  <span className="w-full truncate rounded bg-amber-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-amber-800">{record && record.hours > 0 ? hoursLabel : "—"}</span>
+                  <span className="w-full truncate rounded bg-emerald-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-emerald-800">{record && record.allowance > 0 ? compactCurrency(record.allowance) : "—"}</span>
+                  <span className="w-full truncate rounded bg-sky-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-sky-800">{record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "—"}</span>
                 </button>;
               })}
             </div>
             <div className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
-              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Hours worked</span>
-              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Trip allowance</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Gewerkte uren</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Verblijfskosten</span>
               <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" /> Reiskosten</span>
             </div>
           </section>

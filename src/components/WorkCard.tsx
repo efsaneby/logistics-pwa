@@ -44,7 +44,7 @@ export default function WorkCard({
 
   const handleCalculate = () => {
     if (!startTime || !endTime) {
-      alert("Lütfen başlama ve bitiş saatlerini girin.");
+      alert("Vul een begin- en eindtijd in.");
       return;
     }
 
@@ -52,7 +52,7 @@ export default function WorkCard({
     const end = new Date(endTime);
 
     if (end <= start) {
-      alert("Bitiş saati başlama saatinden sonra olmalıdır!");
+      alert("De eindtijd moet na de begintijd liggen.");
       return;
     }
 
@@ -73,13 +73,13 @@ export default function WorkCard({
       const startDate = new Date(startTime);
       const endDate = new Date(endTime);
 
-      // YYYY-MM-DD biçiminde tarih
+      // Datum in YYYY-MM-DD-formaat.
       const year = startDate.getFullYear();
       const month = String(startDate.getMonth() + 1).padStart(2, "0");
       const day = String(startDate.getDate()).padStart(2, "0");
       const localDate = `${year}-${month}-${day}`;
 
-      // HH:mm:ss biçiminde saatler (Supabase TIME kolonu için)
+      // Tijden in HH:mm:ss-formaat voor de Supabase TIME-kolom.
       const startFormatted = startDate.toTimeString().split(" ")[0];
       const endFormatted = endDate.toTimeString().split(" ")[0];
 
@@ -96,16 +96,16 @@ export default function WorkCard({
         : await supabase.from("work_cards").insert([workData]);
 
       if (error) {
-        alert("Kaydedilirken hata oluştu: " + error.message);
+        alert("Opslaan mislukt: " + error.message);
       } else {
-        alert(initialWork ? "Çalışma kaydı güncellendi." : "Çalışma saati başarıyla kaydedildi! ⏱️");
+        alert(initialWork ? "De werktijd is bijgewerkt." : "De werktijd is opgeslagen! ⏱️");
         setStartTime("");
         setEndTime("");
         setResult(null);
         onWorkSaved?.();
       }
     } catch (error) {
-      alert("Hata: " + (error instanceof Error ? error.message : "Bilinmeyen bir hata oluştu."));
+      alert("Er is een fout opgetreden: " + (error instanceof Error ? error.message : "Onbekende fout."));
     } finally {
       setSaving(false);
     }
@@ -116,7 +116,7 @@ export default function WorkCard({
       <CardHeader className="bg-slate-900 text-white rounded-t-lg">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Clock className="w-5 h-5 text-amber-400" />
-        {initialWork ? "Çalışma kaydını düzenle" : "Uren Registratie (Saat Kaydı)"}
+        {initialWork ? "Werktijd bewerken" : "Werktijd registreren"}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-5 space-y-4">
@@ -126,7 +126,7 @@ export default function WorkCard({
               htmlFor="startTime"
               className="text-xs font-semibold text-slate-600"
             >
-              Aanvang (Başlangıç Tarihi ve Saati)
+              Begintijd
             </Label>
             <Input
               id="startTime"
@@ -142,7 +142,7 @@ export default function WorkCard({
               htmlFor="endTime"
               className="text-xs font-semibold text-slate-600"
             >
-              Einde (Bitiş Tarihi ve Saati)
+              Eindtijd
             </Label>
             <Input
               id="endTime"
@@ -158,7 +158,7 @@ export default function WorkCard({
               htmlFor="pause"
               className="text-xs font-semibold text-slate-600"
             >
-              Pauze (Mola Süresi - Dakika)
+              Pauze (minuten)
             </Label>
             <Input
               id="pause"
@@ -177,7 +177,7 @@ export default function WorkCard({
           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center justify-center gap-2 touch-manipulation py-3"
         >
           <Calculator className="w-4 h-4" />
-          Calculate hours
+          Uren berekenen
         </Button>
 
         {result !== null && (
@@ -185,7 +185,7 @@ export default function WorkCard({
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">
-                  Total
+                  Totaal
                 </span>
                 <span className="text-lg font-bold text-slate-800">
                   {result.totalHours} u
@@ -193,7 +193,7 @@ export default function WorkCard({
               </div>
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">
-                  Regular
+                  Normaal
                 </span>
                 <span className="text-lg font-bold text-slate-800">
                   {result.normalHours} u
@@ -201,7 +201,7 @@ export default function WorkCard({
               </div>
               <div>
                 <span className="text-[10px] text-amber-700 uppercase block font-semibold">
-                  Overtime 130%
+                  Overwerk 130%
                 </span>
                 <span className="text-lg font-bold text-amber-700">
                   {result.overtime130} u
@@ -216,7 +216,7 @@ export default function WorkCard({
               className="w-full border-amber-600 text-amber-800 hover:bg-amber-100 flex items-center justify-center gap-2 touch-manipulation"
             >
               <Save className="w-4 h-4" />
-              {saving ? "Opslaan..." : initialWork ? "Değişiklikleri kaydet" : "Uren Opslaan"}
+              {saving ? "Opslaan…" : initialWork ? "Wijzigingen opslaan" : "Uren opslaan"}
             </Button>
           </div>
         )}
