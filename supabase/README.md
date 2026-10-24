@@ -36,6 +36,10 @@ contents of these files in filename order:
 
 `migrations/20261017000000_add_versioned_trip_allowance_rates.sql`
 
+`migrations/20261018000000_add_driver_absences.sql`
+
+`migrations/20261019000000_add_versioned_special_rate_withholding.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -53,6 +57,13 @@ migrations before using automatic trip creation.
 The eleventh migration creates effective-dated trip allowance versions and the
 first-day/last-day multi-day allowance matrix. It seeds the existing 2026 rates.
 Apply it before deploying code that reads the versioned trip allowance tables.
+The twelfth migration adds private full-day sickness and vacation records and
+prevents registering an absence and Werk record on the same date. Each absence
+contributes 8 normal calendar hours and does not create overtime or a trip.
+The thirteenth migration stores the special-rate withholding percentage on the
+effective-dated loonheffing table version. It seeds existing versions at 50.47%;
+future tax-table versions must set the percentage published for that year (for
+example, 50.47% is stored as `0.5047`).
 
 For future annual trip allowance updates, add a new `trip_allowance_versions`
 row with its effective date range and source, then insert its first-day and

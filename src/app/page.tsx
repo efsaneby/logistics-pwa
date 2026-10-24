@@ -20,6 +20,7 @@ type DayRecord = {
   sundayHours: number;
   allowance: number;
   travelCost: number;
+  absenceType: string | null;
 };
 type PayrollSummary = {
   monthlyBase: number;
@@ -30,12 +31,12 @@ type PayrollSummary = {
   percentageDeductionCount: number;
   tableSalary: number;
   loonheffingTable: number;
+  specialRateWithholdingRate: number;
   scale: string;
   step: number;
   error?: string;
 };
 const weekdays = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
-const btWithholdingRate = 0.3756 + 0.1291;
 const toDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const formatHours = (hours: number) => {
   const totalMinutes = Math.round(hours * 60);
@@ -56,9 +57,13 @@ function CalendarHome() {
     const supabase = createClient();
     const monthStart = toDateKey(month);
     const monthEnd = toDateKey(new Date(month.getFullYear(), month.getMonth() + 1, 1));
-    const [workResult, tripResult, notesResult] = await Promise.all([
+    const [workResult, tripResult, absenceResult, notesResult] = await Promise.all([
       supabase.from("work_cards").select("date, start_time, end_time, break_minutes"),
       supabase.from("trip_cards").select("departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way"),
+      supabase.from("driver_absences")
+        .select("date, absence_type")
+        .gte("date", monthStart)
+        .lt("date", monthEnd),
       supabase.from("driver_day_notes")
         .select("date")
         .gte("date", monthStart)
@@ -81,6 +86,7 @@ function CalendarHome() {
       sundayHours: 0,
       allowance: 0,
       travelCost: 0,
+      absenceType: null,
     });
     for (const item of workResult.data ?? []) {
       const workHours = calculateRecordedWorkHours(
@@ -96,6 +102,17 @@ function CalendarHome() {
         row.saturdayHours += dailyHours.saturdayHours;
         row.sundayHours += dailyHours.sundayHours;
         byDate.set(dailyHours.date, row);
+      }
+    }
+    if (absenceResult.error) {
+      setNotesError("Ziekte- en vakantiedagen konden niet worden geladen.");
+      console.error("Afwezigheidsdagen laden mislukt:", absenceResult.error);
+    } else {
+      for (const absence of absenceResult.data ?? []) {
+        const row = byDate.get(absence.date) ?? emptyDayRecord(absence.date);
+        row.hours += 8;
+        row.absenceType = absence.absence_type;
+        byDate.set(absence.date, row);
       }
     }
     const tripItems = tripResult.data ?? [];
@@ -119,6 +136,7 @@ function CalendarHome() {
         percentageDeductionCount: 0,
         tableSalary: 0,
         loonheffingTable: 0,
+        specialRateWithholdingRate: 0,
         scale: "",
         step: 0,
         error: error instanceof Error ? error.message : "Ritvergoedingen konden niet worden geladen.",
@@ -172,7 +190,7 @@ function CalendarHome() {
       supabase.from("driver_deductions").select("name, calculation_type, value, reduces_table_salary").eq("user_id", authData.user.id),
     ]);
     if (profileError || deductionsError || !profile) {
-      setPayroll({ monthlyBase: 0, overtimePay: 0, saturdayPay: 0, sundayPay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: "", step: 0, error: profileError?.message ?? deductionsError?.message ?? "Vul eerst je chauffeursprofiel in om de schatting te bekijken." });
+      setPayroll({ monthlyBase: 0, overtimePay: 0, saturdayPay: 0, sundayPay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, specialRateWithholdingRate: 0, scale: "", step: 0, error: profileError?.message ?? deductionsError?.message ?? "Vul eerst je chauffeursprofiel in om de schatting te bekijken." });
       return;
     }
     const effectiveDate = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`;
@@ -189,12 +207,16 @@ function CalendarHome() {
       const fixedDeductions = (deductions ?? []).filter((item) => item.calculation_type === "fixed").map((item) => ({ name: item.name, value: Number(item.value), reducesTableSalary: item.reduces_table_salary }));
       const tableSalary = Math.max(0, monthlyBase - fixedDeductions.filter((item) => item.reducesTableSalary).reduce((sum, item) => sum + item.value, 0));
       const { data: taxVersion, error: taxVersionError } = await supabase.from("loonheffing_table_versions")
-        .select("id")
+        .select("id, special_rate_withholding_rate")
         .lte("effective_from", effectiveDate)
         .gte("effective_to", effectiveDate)
         .maybeSingle();
       if (taxVersionError) throw taxVersionError;
       if (!taxVersion) throw new Error(`Er is geen loonheffingstabel beschikbaar voor ${effectiveDate}.`);
+      const specialRateWithholdingRate = Number(taxVersion.special_rate_withholding_rate);
+      if (!Number.isFinite(specialRateWithholdingRate) || specialRateWithholdingRate < 0 || specialRateWithholdingRate > 1) {
+        throw new Error(`Het bijzonder-tariefpercentage is ongeldig voor ${effectiveDate}.`);
+      }
       const { data: taxRow, error: taxRowError } = await supabase.from("loonheffing_table_rows")
         .select("tabelloon, under_aow_no_credit, under_aow_with_credit, aow_before_1946_no_credit, aow_before_1946_credit_excl_single, aow_before_1946_credit_incl_single, aow_1946_or_later_no_credit, aow_1946_or_later_credit_excl_single, aow_1946_or_later_credit_incl_single")
         .eq("version_id", taxVersion.id)
@@ -218,11 +240,12 @@ function CalendarHome() {
         percentageDeductionCount: (deductions ?? []).filter((item) => item.calculation_type === "percentage").length,
         tableSalary,
         loonheffingTable: Number(taxRow[taxColumn]),
+        specialRateWithholdingRate,
         scale: profile.scale,
         step: profile.step,
       });
     } catch (loadError) {
-      setPayroll({ monthlyBase: 0, overtimePay: 0, saturdayPay: 0, sundayPay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: profile.scale, step: profile.step, error: loadError instanceof Error ? loadError.message : "De salaristabel kon niet worden geladen." });
+      setPayroll({ monthlyBase: 0, overtimePay: 0, saturdayPay: 0, sundayPay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, specialRateWithholdingRate: 0, scale: profile.scale, step: profile.step, error: loadError instanceof Error ? loadError.message : "De salaristabel kon niet worden geladen." });
     }
   }, [month]);
 
@@ -251,7 +274,7 @@ function CalendarHome() {
   const monthTravelCost = monthRecords.reduce((sum, record) => sum + record.travelCost, 0);
   const fixedDeductionTotal = payroll?.fixedDeductions.reduce((sum, deduction) => sum + deduction.value, 0) ?? 0;
   const specialWorkPay = (payroll?.overtimePay ?? 0) + (payroll?.saturdayPay ?? 0) + (payroll?.sundayPay ?? 0);
-  const btWithholding = specialWorkPay * btWithholdingRate;
+  const btWithholding = specialWorkPay * (payroll?.specialRateWithholdingRate ?? 0);
   const netEstimate = payroll
     ? payroll.monthlyBase + specialWorkPay + monthAllowance + monthTravelCost - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
     : 0;
@@ -304,7 +327,7 @@ function CalendarHome() {
               <div className="space-y-1 border-t border-slate-100 pt-2 text-slate-600">
                 <p className="flex justify-between gap-3"><span>Tabelloon</span><span>{currency(payroll.tableSalary)}</span></p>
                 <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing</span><span>-{currency(payroll.loonheffingTable)}</span></p>
-                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Bijzonder tarief op toeslagen (50,47%)</span><span>-{currency(btWithholding)}</span></p>
+                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Bijzonder tarief op toeslagen ({((payroll.specialRateWithholdingRate) * 100).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)</span><span>-{currency(btWithholding)}</span></p>
               </div>
               <p className="flex justify-between gap-3 text-emerald-700"><span>Verblijfskosten</span><span>{currency(monthAllowance)}</span></p>
               <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
@@ -345,9 +368,13 @@ function CalendarHome() {
                   : "geen uren";
                 const allowanceLabel = record && record.allowance > 0 ? compactCurrency(record.allowance) : "geen verblijfskosten";
                 const travelLabel = record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "geen reiskosten";
-                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}, ${allowanceLabel}, ${travelLabel}${hasNote ? ", heeft een notitie" : ""}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
+                const absenceLabel = record?.absenceType === "sick"
+                  ? ", ziek 8 uur"
+                  : record?.absenceType === "vacation" ? ", vakantie 8 uur" : "";
+                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}${absenceLabel}, ${allowanceLabel}, ${travelLabel}${hasNote ? ", heeft een notitie" : ""}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
                   <span className="mb-0.5 flex w-full items-center justify-center gap-1">
                     {day}
+                    {record?.absenceType && <span aria-hidden="true" className="rounded bg-sky-100 px-1 text-[8px] text-sky-800">{record.absenceType === "sick" ? "Z" : "V"}</span>}
                     {hasNote && <StickyNote aria-hidden="true" className="h-3 w-3 shrink-0 text-violet-600" />}
                   </span>
                   <span className="w-full truncate rounded bg-amber-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-amber-800">{record && record.hours > 0 ? hoursLabel : "—"}</span>
@@ -358,9 +385,10 @@ function CalendarHome() {
             </div>
             {notesError && <p role="alert" className="mt-3 text-center text-xs text-red-600">{notesError}</p>}
             <div className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
-              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Gewerkte uren</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" /> Uren (werk/verlof)</span>
               <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" /> Verblijfskosten</span>
               <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" /> Reiskosten</span>
+              <span className="flex items-center gap-1.5">Z = ziek · V = vakantie</span>
               <span className="flex items-center gap-1.5"><StickyNote aria-hidden="true" className="h-3 w-3 text-violet-600" /> Notitie</span>
             </div>
           </section>

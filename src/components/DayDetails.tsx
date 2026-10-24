@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import WorkCard from "@/components/WorkCard";
 import TripCard from "@/components/TripCard";
+import DayAbsenceCard, { type AbsenceType } from "@/components/DayAbsenceCard";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
 import { calculateRecordedWorkHours } from "@/lib/calculator/worktime";
 import { createClient } from "@/lib/supabase/client";
@@ -61,6 +62,7 @@ export default function DayDetails({
 }) {
   const [works, setWorks] = useState<WorkRecord[]>([]);
   const [trips, setTrips] = useState<TripRecord[]>([]);
+  const [absence, setAbsence] = useState<AbsenceType | null>(null);
   const [tripRates, setTripRates] = useState<Map<string, Awaited<ReturnType<typeof getTripAllowanceRatesForDate>>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +86,7 @@ export default function DayDetails({
         setNoteMessage(null);
         const supabase = createClient();
         try {
-          const [workResult, tripResult, noteResult] = await Promise.all([
+          const [workResult, tripResult, absenceResult, noteResult] = await Promise.all([
             supabase.from("work_cards")
               .select("id, date, start_time, end_time, break_minutes, normal_hours, overtime_130, is_overnight")
               .eq("date", date)
@@ -92,14 +94,18 @@ export default function DayDetails({
             supabase.from("trip_cards")
               .select("id, departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way, generated_start_work_id, generated_end_work_id")
               .order("departure_time"),
+            supabase.from("driver_absences")
+              .select("absence_type")
+              .eq("date", date)
+              .maybeSingle(),
             supabase.from("driver_day_notes")
               .select("note")
               .eq("date", date)
               .maybeSingle(),
           ]);
           if (!alive) return;
-          if (workResult.error || tripResult.error) {
-            setError(workResult.error?.message ?? tripResult.error?.message ?? "De gegevens van deze dag konden niet worden geladen.");
+          if (workResult.error || tripResult.error || absenceResult.error) {
+            setError(workResult.error?.message ?? tripResult.error?.message ?? absenceResult.error?.message ?? "De gegevens van deze dag konden niet worden geladen.");
             setWorks([]);
             setTrips([]);
           } else {
@@ -118,6 +124,7 @@ export default function DayDetails({
             setWorks(workResult.data ?? []);
             setTrips(dayTrips);
             setTripRates(new Map(ratesEntries));
+            setAbsence(absenceResult.data?.absence_type as AbsenceType | null ?? null);
           }
           if (noteResult.error) {
             setNoteError(noteResult.error.message);
@@ -351,13 +358,33 @@ export default function DayDetails({
         </div>
       )}
 
-      <div className="mt-4">
-        <WorkCard
-          key={`new-work-${date}`}
-          initialDate={date}
-          onWorkSaved={onChanged}
-        />
-      </div>
+      {!loading && !error && (
+        <>
+          <div className="mt-4">
+            <DayAbsenceCard
+              key={`absence-${date}-${absence ?? "none"}`}
+              date={date}
+              initialAbsence={absence}
+              hasWork={works.length > 0}
+              onSaved={onChanged}
+            />
+          </div>
+          {absence ? (
+            <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
+              {absence === "sick" ? "Ziekte" : "Vakantie"} is geregistreerd als 8u00 normale uren.
+              Er worden geen overuren, weekendtoeslag of Rit berekend.
+            </p>
+          ) : (
+            <div className="mt-4">
+              <WorkCard
+                key={`new-work-${date}`}
+                initialDate={date}
+                onWorkSaved={onChanged}
+              />
+            </div>
+          )}
+        </>
+      )}
 
       <section className="mt-4 space-y-2 border-t border-slate-100 pt-4">
         <label htmlFor="day-note" className="block text-sm font-semibold text-slate-800">Notitie voor deze dag</label>
