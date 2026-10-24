@@ -6,7 +6,8 @@ import WorkCard from "@/components/WorkCard";
 import TripCard from "@/components/TripCard";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
 import { createClient } from "@/lib/supabase/client";
-import { CalendarDays, Clock3, Pencil, Plus, Save, Trash2, Truck } from "lucide-react";
+import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
+import { CalendarDays, Clock3, Pencil, Save, Trash2, Truck } from "lucide-react";
 
 interface WorkRecord {
   id: string;
@@ -16,6 +17,7 @@ interface WorkRecord {
   break_minutes: number;
   normal_hours: number;
   overtime_130: number;
+  is_overnight: boolean;
 }
 
 interface TripRecord {
@@ -25,9 +27,11 @@ interface TripRecord {
   is_multi_day: boolean;
   calculated_allowance: number;
   travel_cost_per_one_way: number;
+  generated_start_work_id: string | null;
+  generated_end_work_id: string | null;
 }
 
-type EditingRecord = { type: "work" | "trip"; id: string } | { type: "new"; kind: "work" | "trip" } | null;
+type EditingRecord = { type: "work" | "trip"; id: string } | null;
 
 const dateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -79,11 +83,11 @@ export default function DayDetails({
         try {
           const [workResult, tripResult, noteResult] = await Promise.all([
             supabase.from("work_cards")
-              .select("id, date, start_time, end_time, break_minutes, normal_hours, overtime_130")
+              .select("id, date, start_time, end_time, break_minutes, normal_hours, overtime_130, is_overnight")
               .eq("date", date)
               .order("start_time"),
             supabase.from("trip_cards")
-              .select("id, departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way")
+              .select("id, departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way, generated_start_work_id, generated_end_work_id")
               .order("departure_time"),
             supabase.from("driver_day_notes")
               .select("note")
@@ -172,6 +176,14 @@ export default function DayDetails({
       alert(`Verwijderen mislukt: ${deleteError.message}`);
       return;
     }
+    try {
+      await syncWorkGeneratedTrips([work.date]);
+    } catch (syncError) {
+      alert(
+        "De Werk-uren zijn verwijderd, maar de automatische Rit kon niet worden bijgewerkt: "
+        + (syncError instanceof Error ? syncError.message : "Onbekende fout."),
+      );
+    }
     onChanged();
   };
 
@@ -231,6 +243,7 @@ export default function DayDetails({
                     <Clock3 className="h-4 w-4 text-amber-600" /> Werk
                   </h3>
                   <p className="mt-1 text-sm text-slate-700">{formatTime(work.start_time)} – {formatTime(work.end_time)} · {work.break_minutes} min pauze</p>
+                  {work.is_overnight && <p className="mt-1 text-xs font-medium text-indigo-700">Overnachting</p>}
                   <p className="mt-1 text-xs text-slate-600">
                     {formatHours(Number(work.normal_hours))} normale uren
                     {Number(work.overtime_130) > 0 ? ` · ${formatHours(Number(work.overtime_130))} overuren (130%)` : ""}
@@ -278,8 +291,14 @@ export default function DayDetails({
                     {spansDays && <p className="mt-1 text-[11px] text-slate-500">Bewerken of verwijderen heeft invloed op de hele rit en alle ritdagen.</p>}
                   </div>
                   <div className="flex gap-1">
-                    <Button aria-label="Rit bewerken" variant="ghost" size="icon" onClick={() => beginTripEdit(trip)}><Pencil className="h-4 w-4" /></Button>
-                    <Button aria-label="Rit verwijderen" variant="ghost" size="icon" className="text-red-600" onClick={() => void removeTrip(trip)}><Trash2 className="h-4 w-4" /></Button>
+                    {trip.generated_start_work_id ? (
+                      <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">Automatisch</span>
+                    ) : (
+                      <>
+                        <Button aria-label="Rit bewerken" variant="ghost" size="icon" onClick={() => beginTripEdit(trip)}><Pencil className="h-4 w-4" /></Button>
+                        <Button aria-label="Rit verwijderen" variant="ghost" size="icon" className="text-red-600" onClick={() => void removeTrip(trip)}><Trash2 className="h-4 w-4" /></Button>
+                      </>
+                    )}
                   </div>
                 </div>
                 {editing?.type === "trip" && editing.id === trip.id && (
@@ -295,6 +314,14 @@ export default function DayDetails({
           {!works.length && !trips.length && <p className="py-2 text-center text-sm text-slate-500">Er zijn nog geen werk- of ritgegevens voor deze dag.</p>}
         </div>
       )}
+
+      <div className="mt-4">
+        <WorkCard
+          key={`new-work-${date}`}
+          initialDate={date}
+          onWorkSaved={onChanged}
+        />
+      </div>
 
       <section className="mt-4 space-y-2 border-t border-slate-100 pt-4">
         <label htmlFor="day-note" className="block text-sm font-semibold text-slate-800">Notitie voor deze dag</label>
@@ -326,21 +353,6 @@ export default function DayDetails({
           </Button>
         </div>
       </section>
-
-      {!loading && !error && (
-        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4">
-          <Button variant="outline" onClick={() => setEditing({ type: "new", kind: "work" })}><Plus className="mr-2 h-4 w-4" /> Uren toevoegen</Button>
-          <Button variant="outline" onClick={() => setEditing({ type: "new", kind: "trip" })}><Plus className="mr-2 h-4 w-4" /> Rit toevoegen</Button>
-        </div>
-      )}
-      {editing?.type === "new" && (
-        <div className="mt-3">
-          {editing.kind === "work"
-            ? <WorkCard key={`new-work-${date}`} initialDate={date} onWorkSaved={() => { setEditing(null); onChanged(); }} />
-            : <TripCard key={`new-trip-${date}`} initialDate={date} onTripSaved={() => { setEditing(null); onChanged(); }} />}
-          <Button variant="ghost" className="mt-2 w-full" onClick={() => setEditing(null)}>Annuleren</Button>
-        </div>
-      )}
     </section>
   );
 }

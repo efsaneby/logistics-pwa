@@ -13,6 +13,7 @@ interface TripCardData {
   is_multi_day: boolean;
   calculated_allowance: number;
   created_at: string;
+  generated_start_work_id: string | null;
 }
 
 export default function TripList({ refreshKey }: { refreshKey: number }) {
@@ -158,7 +159,9 @@ export default function TripList({ refreshKey }: { refreshKey: number }) {
                     👉 {formatDate(trip.return_time)}
                   </div>
                   <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
-                    {trip.is_multi_day ? "Meerdaags" : "Eendaags"}
+                    {trip.generated_start_work_id
+                      ? "Automatisch"
+                      : trip.is_multi_day ? "Meerdaags" : "Eendaags"}
                   </span>
                 </div>
 
@@ -169,14 +172,16 @@ export default function TripList({ refreshKey }: { refreshKey: number }) {
                       .toFixed(2)
                       .replace(".", ",")}
                   </span>
-                  <Button
-                    onClick={() => handleDelete(trip.id)}
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 touch-manipulation"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                  {!trip.generated_start_work_id && (
+                    <Button
+                      onClick={() => handleDelete(trip.id)}
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 touch-manipulation"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}

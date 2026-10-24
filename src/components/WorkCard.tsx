@@ -7,7 +7,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateWorkHours, WorkHoursResult } from "@/lib/calculator/worktime";
 import { createClient } from "@/lib/supabase/client";
-import { Clock, Calculator, Save } from "lucide-react";
+import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
+import { Clock, Save } from "lucide-react";
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const { message, details, hint, code } = error as {
+      message: unknown;
+      details?: unknown;
+      hint?: unknown;
+      code?: unknown;
+    };
+    return [message, details, hint, code]
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
+      .join(" · ");
+  }
+  return "Onbekende fout.";
+};
+
+const formatHours = (hours: number) => {
+  const totalMinutes = Math.round(hours * 60);
+  return `${Math.floor(totalMinutes / 60)}u${String(totalMinutes % 60).padStart(2, "0")}`;
+};
 
 export default function WorkCard({
   initialDate,
@@ -21,57 +43,47 @@ export default function WorkCard({
     start_time: string;
     end_time: string;
     break_minutes: number;
+    is_overnight: boolean;
   };
   onWorkSaved?: () => void;
 }) {
   const toDateTimeInput = (date: string, time: string) => `${date}T${time.slice(0, 5)}`;
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const defaultDate = initialDate ?? todayKey;
   const [startTime, setStartTime] = useState(initialWork
     ? toDateTimeInput(initialWork.date, initialWork.start_time)
-    : initialDate ? `${initialDate}T08:00` : "");
+    : `${defaultDate}T06:00`);
   const [endTime, setEndTime] = useState(initialWork
     ? toDateTimeInput(initialWork.date, initialWork.end_time)
-    : initialDate ? `${initialDate}T16:00` : "");
+    : `${defaultDate}T18:00`);
   const [pauseMinutes, setPauseMinutes] = useState(String(initialWork?.break_minutes ?? 60));
-  const [result, setResult] = useState<WorkHoursResult | null>(() => {
-    if (!initialWork) return null;
-    return calculateWorkHours(
-      new Date(toDateTimeInput(initialWork.date, initialWork.start_time)),
-      new Date(toDateTimeInput(initialWork.date, initialWork.end_time)),
-      initialWork.break_minutes,
-    );
-  });
+  const [isOvernight, setIsOvernight] = useState(initialWork?.is_overnight ?? false);
   const [saving, setSaving] = useState(false);
 
-  const handleCalculate = () => {
-    if (!startTime || !endTime) {
+  const startDate = startTime ? new Date(startTime) : null;
+  const endDate = endTime ? new Date(endTime) : null;
+  const result: WorkHoursResult | null = startDate && endDate
+    && !Number.isNaN(startDate.getTime())
+    && !Number.isNaN(endDate.getTime())
+    && endDate > startDate
+    ? calculateWorkHours(startDate, endDate, Number(pauseMinutes) || 0)
+    : null;
+
+  const handleSave = async () => {
+    if (!startDate || !endDate) {
       alert("Vul een begin- en eindtijd in.");
       return;
     }
-
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-
-    if (end <= start) {
+    if (endDate <= startDate) {
       alert("De eindtijd moet na de begintijd liggen.");
       return;
     }
-
-    const calculated = calculateWorkHours(
-      start,
-      end,
-      Number(pauseMinutes) || 0,
-    );
-    setResult(calculated);
-  };
-
-  const handleSave = async () => {
-    if (!result || !startTime || !endTime) return;
+    if (!result) return;
 
     try {
       setSaving(true);
       const supabase = createClient();
-      const startDate = new Date(startTime);
-      const endDate = new Date(endTime);
 
       // Datum in YYYY-MM-DD-formaat.
       const year = startDate.getFullYear();
@@ -88,24 +100,46 @@ export default function WorkCard({
         start_time: startFormatted,
         end_time: endFormatted,
         break_minutes: Number(pauseMinutes) || 0,
+        is_overnight: isOvernight,
         normal_hours: result.normalHours,
         overtime_130: result.overtime130,
       };
-      const { error } = initialWork
-        ? await supabase.from("work_cards").update(workData).eq("id", initialWork.id)
-        : await supabase.from("work_cards").insert([workData]);
+      const saveResult = initialWork
+        ? await supabase.from("work_cards").update(workData).eq("id", initialWork.id).select("id").single()
+        : await supabase.from("work_cards").insert([workData]).select("id").single();
 
-      if (error) {
-        alert("Opslaan mislukt: " + error.message);
+      if (saveResult.error) {
+        alert("Opslaan mislukt: " + saveResult.error.message);
       } else {
-        alert(initialWork ? "De werktijd is bijgewerkt." : "De werktijd is opgeslagen! ⏱️");
-        setStartTime("");
-        setEndTime("");
-        setResult(null);
+        try {
+          const syncDates = [localDate];
+          if (initialWork && initialWork.date !== localDate) syncDates.push(initialWork.date);
+          const syncResult = await syncWorkGeneratedTrips(syncDates);
+          const workMessage = initialWork
+            ? "De werktijd is bijgewerkt."
+            : "De werktijd is opgeslagen! ⏱️";
+          const tripMessage = syncResult.tripsUpdated > 0
+            ? ` ${syncResult.tripsUpdated} automatische Rit(ten) bijgewerkt.`
+            : syncResult.hasPendingOvernight
+              ? " De automatische Rit volgt zodra je een Werkdag zonder overnachting opslaat."
+              : " Er is geen automatische Rit gevonden om op te slaan.";
+          alert(workMessage + tripMessage);
+        } catch (syncError) {
+          console.error("Automatische Rit bijwerken mislukt:", syncError);
+          alert(
+            "De Werk-uren zijn opgeslagen, maar de automatische Rit kon niet worden bijgewerkt: "
+            + getErrorMessage(syncError),
+          );
+        }
+        setStartTime(`${defaultDate}T06:00`);
+        setEndTime(`${defaultDate}T18:00`);
+        setPauseMinutes("60");
+        setIsOvernight(false);
         onWorkSaved?.();
       }
     } catch (error) {
-      alert("Er is een fout opgetreden: " + (error instanceof Error ? error.message : "Onbekende fout."));
+      console.error("Werktijd opslaan mislukt:", error);
+      alert("Er is een fout opgetreden: " + getErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -170,25 +204,26 @@ export default function WorkCard({
               className="mt-1 touch-manipulation"
             />
           </div>
+          <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={isOvernight}
+              onChange={(event) => setIsOvernight(event.target.checked)}
+              className="h-4 w-4 accent-amber-600"
+            />
+            Overnachting
+          </label>
         </div>
 
-        <Button
-          onClick={handleCalculate}
-          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center justify-center gap-2 touch-manipulation py-3"
-        >
-          <Calculator className="w-4 h-4" />
-          Uren berekenen
-        </Button>
-
-        {result !== null && (
-          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+        {result !== null ? (
+          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">
                   Totaal
                 </span>
                 <span className="text-lg font-bold text-slate-800">
-                  {result.totalHours} u
+                  {formatHours(result.totalHours)}
                 </span>
               </div>
               <div>
@@ -196,7 +231,7 @@ export default function WorkCard({
                   Normaal
                 </span>
                 <span className="text-lg font-bold text-slate-800">
-                  {result.normalHours} u
+                  {formatHours(result.normalHours)}
                 </span>
               </div>
               <div>
@@ -204,22 +239,25 @@ export default function WorkCard({
                   Overwerk 130%
                 </span>
                 <span className="text-lg font-bold text-amber-700">
-                  {result.overtime130} u
+                  {formatHours(result.overtime130)}
                 </span>
               </div>
             </div>
-
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              variant="outline"
-              className="w-full border-amber-600 text-amber-800 hover:bg-amber-100 flex items-center justify-center gap-2 touch-manipulation"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? "Opslaan…" : initialWork ? "Wijzigingen opslaan" : "Uren opslaan"}
-            </Button>
           </div>
+        ) : (
+          <p role="alert" className="text-sm text-red-600">
+            De eindtijd moet na de begintijd liggen.
+          </p>
         )}
+
+        <Button
+          onClick={handleSave}
+          disabled={saving || !result}
+          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium flex items-center justify-center gap-2 touch-manipulation py-3"
+        >
+          <Save className="w-4 h-4" />
+          {saving ? "Opslaan…" : initialWork ? "Wijzigingen opslaan" : "Uren opslaan"}
+        </Button>
       </CardContent>
     </Card>
   );

@@ -32,6 +32,8 @@ contents of these files in filename order:
 
 `migrations/20261015010000_add_driver_day_notes.sql`
 
+`migrations/20261016000000_add_overnight_work_and_generated_trips.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -43,6 +45,9 @@ The sixth migration adds an optional one-way travel reimbursement to each driver
 
 The eighth migration allows drivers to update their own work and trip records from the daily detail view.
 The ninth migration adds private, per-driver notes for each calendar day.
+The tenth migration adds an overnight flag to work records and links automatically
+generated trips to their first and last work records. Apply it after the previous
+migrations before using automatic trip creation.
 
 If the first five migrations have already been applied, run `migrations/20261011000000_add_trip_travel_cost.sql` and then `migrations/20261011010000_backfill_trip_travel_cost.sql` for this change. If the sixth migration has already run, run only the seventh migration to populate historical trips.
 

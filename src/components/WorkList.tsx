@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
 import { Clock, Trash2, Calendar, RefreshCw } from "lucide-react";
 
 interface WorkCardData {
@@ -14,6 +15,7 @@ interface WorkCardData {
   break_minutes: number;
   normal_hours: number;
   overtime_130: number;
+  is_overnight: boolean;
   created_at: string;
 }
 
@@ -66,6 +68,15 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
       if (error) {
         alert("Verwijderen mislukt: " + error.message);
       } else {
+        try {
+          const deletedWork = works.find((work) => work.id === id);
+          if (deletedWork) await syncWorkGeneratedTrips([deletedWork.date]);
+        } catch (syncError) {
+          alert(
+            "De Werk-uren zijn verwijderd, maar de automatische Rit kon niet worden bijgewerkt: "
+            + (syncError instanceof Error ? syncError.message : "Onbekende fout."),
+          );
+        }
         setWorks((prev) => prev.filter((w) => w.id !== id));
       }
     } catch (err: any) {
@@ -175,6 +186,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                     {formatTime(work.start_time)} - {formatTime(work.end_time)}{" "}
                     ({work.break_minutes}m pauze)
                   </div>
+                  {work.is_overnight && <div className="text-indigo-700">Overnachting</div>}
                 </div>
 
                 <div className="flex items-center gap-3">
