@@ -1,4 +1,4 @@
-import { MEERDAAGSE_MATRIX_2026 } from "@/lib/calculator/verblijfskosten";
+import type { TripAllowanceRates } from "@/lib/calculator/verblijfskosten";
 
 const toDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -14,6 +14,7 @@ export function getTripDailyAllowance(
   isMultiDay: boolean,
   calculatedAllowance: number,
   dateKey: string,
+  rates: TripAllowanceRates,
 ) {
   const departureKey = toDateKey(departure);
   const returnKey = toDateKey(returnTime);
@@ -28,14 +29,10 @@ export function getTripDailyAllowance(
 
   const index = dayOrdinal(dateKey) - firstOrdinal;
   if (index === 0) {
-    return MEERDAAGSE_MATRIX_2026.eersteDag[
-      departure.getHours() as keyof typeof MEERDAAGSE_MATRIX_2026.eersteDag
-    ] || 0;
+    return rates.first_day_amount_by_hour[departure.getHours()] || 0;
   }
   if (index === dayCount - 1) {
-    return MEERDAAGSE_MATRIX_2026.laatsteDag[
-      returnTime.getHours() as keyof typeof MEERDAAGSE_MATRIX_2026.laatsteDag
-    ] || 0;
+    return rates.last_day_amount_by_hour[returnTime.getHours()] || 0;
   }
-  return MEERDAAGSE_MATRIX_2026.tussenliggendeDag;
+  return rates.multi_day_intermediate_day_amount;
 }

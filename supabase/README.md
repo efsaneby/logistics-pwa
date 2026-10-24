@@ -34,6 +34,8 @@ contents of these files in filename order:
 
 `migrations/20261016000000_add_overnight_work_and_generated_trips.sql`
 
+`migrations/20261017000000_add_versioned_trip_allowance_rates.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -48,6 +50,14 @@ The ninth migration adds private, per-driver notes for each calendar day.
 The tenth migration adds an overnight flag to work records and links automatically
 generated trips to their first and last work records. Apply it after the previous
 migrations before using automatic trip creation.
+The eleventh migration creates effective-dated trip allowance versions and the
+first-day/last-day multi-day allowance matrix. It seeds the existing 2026 rates.
+Apply it before deploying code that reads the versioned trip allowance tables.
+
+For future annual trip allowance updates, add a new `trip_allowance_versions`
+row with its effective date range and source, then insert its first-day and
+last-day hourly rows into `trip_allowance_matrix`. Keep prior versions intact:
+trips use the rate version effective on their departure date.
 
 If the first five migrations have already been applied, run `migrations/20261011000000_add_trip_travel_cost.sql` and then `migrations/20261011010000_backfill_trip_travel_cost.sql` for this change. If the sixth migration has already run, run only the seventh migration to populate historical trips.
 

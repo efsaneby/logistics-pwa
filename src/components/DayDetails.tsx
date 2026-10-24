@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import WorkCard from "@/components/WorkCard";
 import TripCard from "@/components/TripCard";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
+import { calculateRecordedWorkHours } from "@/lib/calculator/worktime";
 import { createClient } from "@/lib/supabase/client";
 import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
+import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rates";
 import { CalendarDays, Clock3, Pencil, Save, Trash2, Truck } from "lucide-react";
 
 interface WorkRecord {
@@ -59,6 +61,7 @@ export default function DayDetails({
 }) {
   const [works, setWorks] = useState<WorkRecord[]>([]);
   const [trips, setTrips] = useState<TripRecord[]>([]);
+  const [tripRates, setTripRates] = useState<Map<string, Awaited<ReturnType<typeof getTripAllowanceRatesForDate>>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingRecord>(null);
@@ -105,8 +108,16 @@ export default function DayDetails({
               const end = new Date(trip.return_time);
               return dateKey(start) <= date && dateKey(end) >= date;
             });
+            const ratesEntries = await Promise.all(dayTrips.map(async (trip) => {
+              const departure = new Date(trip.departure_time);
+              return [
+                trip.id,
+                await getTripAllowanceRatesForDate(dateKey(departure)),
+              ] as const;
+            }));
             setWorks(workResult.data ?? []);
             setTrips(dayTrips);
+            setTripRates(new Map(ratesEntries));
           }
           if (noteResult.error) {
             setNoteError(noteResult.error.message);
@@ -235,7 +246,14 @@ export default function DayDetails({
 
       {!loading && !error && (
         <div className="space-y-3">
-          {works.map((work) => (
+          {works.map((work) => {
+            const workHours = calculateRecordedWorkHours(
+              work.date,
+              work.start_time,
+              work.end_time,
+              work.break_minutes,
+            );
+            return (
             <article key={work.id} className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -245,8 +263,16 @@ export default function DayDetails({
                   <p className="mt-1 text-sm text-slate-700">{formatTime(work.start_time)} – {formatTime(work.end_time)} · {work.break_minutes} min pauze</p>
                   {work.is_overnight && <p className="mt-1 text-xs font-medium text-indigo-700">Overnachting</p>}
                   <p className="mt-1 text-xs text-slate-600">
-                    {formatHours(Number(work.normal_hours))} normale uren
-                    {Number(work.overtime_130) > 0 ? ` · ${formatHours(Number(work.overtime_130))} overuren (130%)` : ""}
+                    {formatHours(workHours.normalHours)} normale uren
+                    {workHours.overtime130 > 0
+                      ? ` · ${formatHours(workHours.overtime130)} overuren (130%)`
+                      : ""}
+                    {workHours.saturdayHours > 0
+                      ? ` · ${formatHours(workHours.saturdayHours)} zaterdag (150%)`
+                      : ""}
+                    {workHours.sundayHours > 0
+                      ? ` · ${formatHours(workHours.sundayHours)} zondag (200%)`
+                      : ""}
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -261,18 +287,28 @@ export default function DayDetails({
                 </div>
               )}
             </article>
-          ))}
+          );
+          })}
 
           {trips.map((trip) => {
             const departure = new Date(trip.departure_time);
             const returnTime = new Date(trip.return_time);
             const spansDays = dateKey(departure) !== dateKey(returnTime);
+            const allowanceRates = tripRates.get(trip.id);
+            if (!allowanceRates) {
+              return (
+                <article key={trip.id} role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  Ritvergoedingen voor deze datum konden niet worden geladen.
+                </article>
+              );
+            }
             const dayAllowance = getTripDailyAllowance(
               departure,
               returnTime,
               trip.is_multi_day,
               Number(trip.calculated_allowance),
               date,
+              allowanceRates,
             );
             const oneWayCost = Number(trip.travel_cost_per_one_way || 0);
             const travelCost = oneWayCost * (

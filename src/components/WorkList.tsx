@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
+import { calculateRecordedWorkHours } from "@/lib/calculator/worktime";
 import { Clock, Trash2, Calendar, RefreshCw } from "lucide-react";
 
 interface WorkCardData {
@@ -39,7 +40,7 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
       } else {
         setWorks(data || []);
       }
-    } catch (err: any) {
+    } catch {
       setErrorMsg("Er kon geen verbinding worden gemaakt.");
     } finally {
       setLoading(false);
@@ -79,17 +80,45 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
         }
         setWorks((prev) => prev.filter((w) => w.id !== id));
       }
-    } catch (err: any) {
-      alert("Er is een fout opgetreden: " + (err instanceof Error ? err.message : "Onbekende fout."));
+    } catch (error) {
+      alert("Er is een fout opgetreden: " + (error instanceof Error ? error.message : "Onbekende fout."));
     }
   };
 
   const totalNormal = works.reduce(
-    (acc, curr) => acc + Number(curr.normal_hours || 0),
+    (acc, curr) => acc + calculateRecordedWorkHours(
+      curr.date,
+      curr.start_time,
+      curr.end_time,
+      curr.break_minutes,
+    ).normalHours,
     0,
   );
   const totalOvertime = works.reduce(
-    (acc, curr) => acc + Number(curr.overtime_130 || 0),
+    (acc, curr) => acc + calculateRecordedWorkHours(
+      curr.date,
+      curr.start_time,
+      curr.end_time,
+      curr.break_minutes,
+    ).overtime130,
+    0,
+  );
+  const totalSaturday = works.reduce(
+    (acc, curr) => acc + calculateRecordedWorkHours(
+      curr.date,
+      curr.start_time,
+      curr.end_time,
+      curr.break_minutes,
+    ).saturdayHours,
+    0,
+  );
+  const totalSunday = works.reduce(
+    (acc, curr) => acc + calculateRecordedWorkHours(
+      curr.date,
+      curr.start_time,
+      curr.end_time,
+      curr.break_minutes,
+    ).sundayHours,
     0,
   );
 
@@ -146,6 +175,22 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                 {totalOvertime.toFixed(1)} u
               </span>
             </div>
+            <div>
+              <span className="text-indigo-700 block font-medium">
+                Zaterdag 150%
+              </span>
+              <span className="text-base font-bold text-indigo-700">
+                {totalSaturday.toFixed(1)} u
+              </span>
+            </div>
+            <div>
+              <span className="text-violet-700 block font-medium">
+                Zondag 200%
+              </span>
+              <span className="text-base font-bold text-violet-700">
+                {totalSunday.toFixed(1)} u
+              </span>
+            </div>
           </div>
         )}
 
@@ -172,7 +217,14 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
           </p>
         ) : (
           <div className="space-y-2.5 max-h-75 overflow-y-auto pr-1">
-            {works.map((work) => (
+            {works.map((work) => {
+              const workHours = calculateRecordedWorkHours(
+                work.date,
+                work.start_time,
+                work.end_time,
+                work.break_minutes,
+              );
+              return (
               <div
                 key={work.id}
                 className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs"
@@ -192,11 +244,21 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <span className="block font-bold text-slate-700">
-                      {work.normal_hours} u normaal
+                      {workHours.normalHours} u normaal
                     </span>
-                    {Number(work.overtime_130) > 0 && (
+                    {workHours.overtime130 > 0 && (
                       <span className="block font-bold text-amber-600 text-[11px]">
-                        +{work.overtime_130} u (130%)
+                        +{workHours.overtime130} u (130%)
+                      </span>
+                    )}
+                    {workHours.saturdayHours > 0 && (
+                      <span className="block font-bold text-indigo-700 text-[11px]">
+                        {workHours.saturdayHours} u zaterdag (150%)
+                      </span>
+                    )}
+                    {workHours.sundayHours > 0 && (
+                      <span className="block font-bold text-violet-700 text-[11px]">
+                        {workHours.sundayHours} u zondag (200%)
                       </span>
                     )}
                   </div>
@@ -210,7 +272,8 @@ export default function WorkList({ refreshKey }: { refreshKey: number }) {
                   </Button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </CardContent>

@@ -3,6 +3,7 @@ import {
   calculateMeerdaagseRit,
 } from "@/lib/calculator/verblijfskosten";
 import { createClient } from "@/lib/supabase/client";
+import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rates";
 
 interface WorkRecord {
   id: string;
@@ -68,12 +69,20 @@ export async function syncWorkGeneratedTrips(affectedDates: string[]) {
 
   const dailyWorks: DailyWork[] = [...workByDate.entries()]
     .sort(([firstDate], [secondDate]) => firstDate.localeCompare(secondDate))
-    .map(([date, dayWorks]) => ({
-      date,
-      firstWork: dayWorks[0],
-      lastWork: dayWorks[dayWorks.length - 1],
-      isOvernight: dayWorks.some((work) => work.is_overnight),
-    }));
+    .map(([date, dayWorks]) => {
+      const firstWork = [...dayWorks].sort((first, second) =>
+        first.start_time.localeCompare(second.start_time),
+      )[0];
+      const lastWork = [...dayWorks].sort((first, second) =>
+        second.end_time.localeCompare(first.end_time),
+      )[0];
+      return {
+        date,
+        firstWork,
+        lastWork,
+        isOvernight: dayWorks.some((work) => work.is_overnight),
+      };
+    });
 
   const intervals: { start: DailyWork; end: DailyWork }[] = [];
   let overnightStart: DailyWork | null = null;
@@ -93,17 +102,31 @@ export async function syncWorkGeneratedTrips(affectedDates: string[]) {
 
   const affectedStart = affectedDates.reduce((start, date) => date < start ? date : start);
   const affectedEnd = affectedDates.reduce((end, date) => date > end ? date : end);
-  const tripsInAffectedRange = (generatedTripsResult.data ?? []).filter((trip) =>
-    dateKey(trip.departure_time) <= affectedEnd && dateKey(trip.return_time) >= affectedStart,
-  );
-  const syncStart = tripsInAffectedRange.reduce(
-    (start, trip) => dateKey(trip.departure_time) < start ? dateKey(trip.departure_time) : start,
-    affectedStart,
-  );
-  const syncEnd = tripsInAffectedRange.reduce(
-    (end, trip) => dateKey(trip.return_time) > end ? dateKey(trip.return_time) : end,
-    affectedEnd,
-  );
+  let syncStart = affectedStart;
+  let syncEnd = affectedEnd;
+  let rangeExpanded = true;
+  while (rangeExpanded) {
+    const previousStart = syncStart;
+    const previousEnd = syncEnd;
+
+    for (const trip of generatedTripsResult.data ?? []) {
+      const tripStart = dateKey(trip.departure_time);
+      const tripEnd = dateKey(trip.return_time);
+      if (tripStart <= syncEnd && tripEnd >= syncStart) {
+        if (tripStart < syncStart) syncStart = tripStart;
+        if (tripEnd > syncEnd) syncEnd = tripEnd;
+      }
+    }
+
+    for (const interval of intervals) {
+      if (interval.start.date <= syncEnd && interval.end.date >= syncStart) {
+        if (interval.start.date < syncStart) syncStart = interval.start.date;
+        if (interval.end.date > syncEnd) syncEnd = interval.end.date;
+      }
+    }
+
+    rangeExpanded = syncStart !== previousStart || syncEnd !== previousEnd;
+  }
   const datesOverlap = (start: string, end: string) => start <= syncEnd && end >= syncStart;
   const scopedIntervals = intervals.filter(({ start, end }) => datesOverlap(start.date, end.date));
   const scopedExistingTrips = (generatedTripsResult.data ?? []).filter((trip) =>
@@ -113,7 +136,7 @@ export async function syncWorkGeneratedTrips(affectedDates: string[]) {
   const existingByStartId = new Map(
     scopedExistingTrips.map((trip) => [trip.generated_start_work_id, trip]),
   );
-  const tripsToUpsert: GeneratedTrip[] = scopedIntervals.map(({ start, end }) => {
+  const tripsToUpsert: GeneratedTrip[] = await Promise.all(scopedIntervals.map(async ({ start, end }) => {
     const departure = localDateTime(start.date, start.firstWork.start_time);
     const returnTime = localDateTime(end.date, end.lastWork.end_time);
     if (Number.isNaN(departure.getTime()) || Number.isNaN(returnTime.getTime()) || returnTime <= departure) {
@@ -122,19 +145,20 @@ export async function syncWorkGeneratedTrips(affectedDates: string[]) {
 
     const isMultiDay = start.date !== end.date;
     const existing = existingByStartId.get(start.firstWork.id);
+    const allowanceRates = await getTripAllowanceRatesForDate(start.date);
     return {
       user_id: authData.user.id,
       departure_time: departure.toISOString(),
       return_time: returnTime.toISOString(),
       is_multi_day: isMultiDay,
       calculated_allowance: isMultiDay
-        ? calculateMeerdaagseRit(departure, returnTime)
-        : calculateEendaagseRit(departure, returnTime),
+        ? calculateMeerdaagseRit(departure, returnTime, allowanceRates)
+        : calculateEendaagseRit(departure, returnTime, allowanceRates),
       travel_cost_per_one_way: Number(existing?.travel_cost_per_one_way ?? profileResult.data.travel_cost_per_one_way),
       generated_start_work_id: start.firstWork.id,
       generated_end_work_id: end.lastWork.id,
     };
-  });
+  }));
 
   const tripsToInsert: GeneratedTrip[] = [];
   for (const trip of tripsToUpsert) {

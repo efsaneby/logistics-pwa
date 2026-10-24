@@ -6,14 +6,26 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import AccountGate from "@/components/AccountGate";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
+import { calculateRecordedWorkHours } from "@/lib/calculator/worktime";
+import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rates";
 import { ChevronLeft, ChevronRight, StickyNote, Wallet } from "lucide-react";
 import { getSalaryScaleRatesForDate } from "@/lib/supabase/salary-scales";
 import type { SalaryScaleRate } from "@/lib/supabase/salary-scales";
 
-type DayRecord = { date: string; hours: number; overtimeHours: number; allowance: number; travelCost: number };
+type DayRecord = {
+  date: string;
+  hours: number;
+  overtimeHours: number;
+  saturdayHours: number;
+  sundayHours: number;
+  allowance: number;
+  travelCost: number;
+};
 type PayrollSummary = {
   monthlyBase: number;
   overtimePay: number;
+  saturdayPay: number;
+  sundayPay: number;
   fixedDeductions: { name: string; value: number; reducesTableSalary: boolean }[];
   percentageDeductionCount: number;
   tableSalary: number;
@@ -45,7 +57,7 @@ function CalendarHome() {
     const monthStart = toDateKey(month);
     const monthEnd = toDateKey(new Date(month.getFullYear(), month.getMonth() + 1, 1));
     const [workResult, tripResult, notesResult] = await Promise.all([
-      supabase.from("work_cards").select("date, normal_hours, overtime_130"),
+      supabase.from("work_cards").select("date, start_time, end_time, break_minutes"),
       supabase.from("trip_cards").select("departure_time, return_time, is_multi_day, calculated_allowance, travel_cost_per_one_way"),
       supabase.from("driver_day_notes")
         .select("date")
@@ -61,39 +73,90 @@ function CalendarHome() {
       setNotesError(null);
     }
     const byDate = new Map<string, DayRecord>();
+    const emptyDayRecord = (date: string): DayRecord => ({
+      date,
+      hours: 0,
+      overtimeHours: 0,
+      saturdayHours: 0,
+      sundayHours: 0,
+      allowance: 0,
+      travelCost: 0,
+    });
     for (const item of workResult.data ?? []) {
-      const row = byDate.get(item.date) ?? { date: item.date, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
-      const overtime = Number(item.overtime_130 || 0);
-      row.hours += Number(item.normal_hours || 0) + overtime;
-      row.overtimeHours += overtime;
-      byDate.set(item.date, row);
+      const workHours = calculateRecordedWorkHours(
+        item.date,
+        item.start_time,
+        item.end_time,
+        Number(item.break_minutes || 0),
+      );
+      for (const dailyHours of workHours.dailyBreakdown) {
+        const row = byDate.get(dailyHours.date) ?? emptyDayRecord(dailyHours.date);
+        row.hours += dailyHours.totalHours;
+        row.overtimeHours += dailyHours.overtime130;
+        row.saturdayHours += dailyHours.saturdayHours;
+        row.sundayHours += dailyHours.sundayHours;
+        byDate.set(dailyHours.date, row);
+      }
     }
-    for (const item of tripResult.data ?? []) {
+    const tripItems = tripResult.data ?? [];
+    const tripDepartureDates = [...new Set(tripItems.map((item) => toDateKey(new Date(item.departure_time))))];
+    let tripRatesByDate: Map<string, Awaited<ReturnType<typeof getTripAllowanceRatesForDate>>>;
+    try {
+      const ratesEntries = await Promise.all(tripDepartureDates.map(async (date) => [
+        date,
+        await getTripAllowanceRatesForDate(date),
+      ] as const));
+      tripRatesByDate = new Map(ratesEntries);
+    } catch (error) {
+      console.error("Ritvergoedingen laden mislukt:", error);
+      setRecords([...byDate.values()]);
+      setPayroll({
+        monthlyBase: 0,
+        overtimePay: 0,
+        saturdayPay: 0,
+        sundayPay: 0,
+        fixedDeductions: [],
+        percentageDeductionCount: 0,
+        tableSalary: 0,
+        loonheffingTable: 0,
+        scale: "",
+        step: 0,
+        error: error instanceof Error ? error.message : "Ritvergoedingen konden niet worden geladen.",
+      });
+      return;
+    }
+
+    for (const item of tripItems) {
       const departure = new Date(item.departure_time);
       const returnTime = new Date(item.return_time);
       if (Number.isNaN(departure.getTime()) || Number.isNaN(returnTime.getTime())) continue;
+      const allowanceRates = tripRatesByDate.get(toDateKey(departure));
+      if (!allowanceRates) {
+        throw new Error(`Ritvergoedingen ontbreken voor ${toDateKey(departure)}.`);
+      }
 
       const firstDay = new Date(departure.getFullYear(), departure.getMonth(), departure.getDate());
       const lastDay = new Date(returnTime.getFullYear(), returnTime.getMonth(), returnTime.getDate());
       for (const date = new Date(firstDay); date <= lastDay; date.setDate(date.getDate() + 1)) {
         const key = toDateKey(date);
-        const row = byDate.get(key) ?? { date: key, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
+        const row = byDate.get(key) ?? emptyDayRecord(key);
         row.allowance += getTripDailyAllowance(
           departure,
           returnTime,
           item.is_multi_day,
           Number(item.calculated_allowance || 0),
           key,
+          allowanceRates,
         );
         byDate.set(key, row);
       }
       const travelAmount = Number(item.travel_cost_per_one_way || 0);
       const departureKey = toDateKey(departure);
-      const departureRow = byDate.get(departureKey) ?? { date: departureKey, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
+      const departureRow = byDate.get(departureKey) ?? emptyDayRecord(departureKey);
       departureRow.travelCost += travelAmount;
       byDate.set(departureKey, departureRow);
       const returnKey = toDateKey(returnTime);
-      const returnRow = byDate.get(returnKey) ?? { date: returnKey, hours: 0, overtimeHours: 0, allowance: 0, travelCost: 0 };
+      const returnRow = byDate.get(returnKey) ?? emptyDayRecord(returnKey);
       returnRow.travelCost += travelAmount;
       byDate.set(returnKey, returnRow);
     }
@@ -109,7 +172,7 @@ function CalendarHome() {
       supabase.from("driver_deductions").select("name, calculation_type, value, reduces_table_salary").eq("user_id", authData.user.id),
     ]);
     if (profileError || deductionsError || !profile) {
-      setPayroll({ monthlyBase: 0, overtimePay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: "", step: 0, error: profileError?.message ?? deductionsError?.message ?? "Vul eerst je chauffeursprofiel in om de schatting te bekijken." });
+      setPayroll({ monthlyBase: 0, overtimePay: 0, saturdayPay: 0, sundayPay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: "", step: 0, error: profileError?.message ?? deductionsError?.message ?? "Vul eerst je chauffeursprofiel in om de schatting te bekijken." });
       return;
     }
     const effectiveDate = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`;
@@ -118,7 +181,10 @@ function CalendarHome() {
       const rate = (salaryTable.rates as SalaryScaleRate[]).find((item) => item.scale === profile.scale && item.step === profile.step);
       if (!rate) throw new Error(`Salarisschaal ${profile.scale}${profile.step} is niet gevonden.`);
       const monthPrefix = effectiveDate.slice(0, 7);
-      const monthOvertime = [...byDate.values()].filter((row) => row.date.startsWith(monthPrefix)).reduce((sum, row) => sum + row.overtimeHours, 0);
+      const monthWorkRecords = [...byDate.values()].filter((row) => row.date.startsWith(monthPrefix));
+      const monthOvertime = monthWorkRecords.reduce((sum, row) => sum + row.overtimeHours, 0);
+      const monthSaturdayHours = monthWorkRecords.reduce((sum, row) => sum + row.saturdayHours, 0);
+      const monthSundayHours = monthWorkRecords.reduce((sum, row) => sum + row.sundayHours, 0);
       const monthlyBase = Number(rate.monthly_gross) * (Number(profile.contract_hours_per_week) / Number(salaryTable.version.full_time_hours_per_week));
       const fixedDeductions = (deductions ?? []).filter((item) => item.calculation_type === "fixed").map((item) => ({ name: item.name, value: Number(item.value), reducesTableSalary: item.reduces_table_salary }));
       const tableSalary = Math.max(0, monthlyBase - fixedDeductions.filter((item) => item.reducesTableSalary).reduce((sum, item) => sum + item.value, 0));
@@ -146,6 +212,8 @@ function CalendarHome() {
       setPayroll({
         monthlyBase,
         overtimePay: monthOvertime * Number(rate.hourly_rate_130),
+        saturdayPay: monthSaturdayHours * Number(rate.hourly_rate_150),
+        sundayPay: monthSundayHours * Number(rate.hourly_rate_100) * 2,
         fixedDeductions,
         percentageDeductionCount: (deductions ?? []).filter((item) => item.calculation_type === "percentage").length,
         tableSalary,
@@ -154,7 +222,7 @@ function CalendarHome() {
         step: profile.step,
       });
     } catch (loadError) {
-      setPayroll({ monthlyBase: 0, overtimePay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: profile.scale, step: profile.step, error: loadError instanceof Error ? loadError.message : "De salaristabel kon niet worden geladen." });
+      setPayroll({ monthlyBase: 0, overtimePay: 0, saturdayPay: 0, sundayPay: 0, fixedDeductions: [], percentageDeductionCount: 0, tableSalary: 0, loonheffingTable: 0, scale: profile.scale, step: profile.step, error: loadError instanceof Error ? loadError.message : "De salaristabel kon niet worden geladen." });
     }
   }, [month]);
 
@@ -182,9 +250,10 @@ function CalendarHome() {
   const monthAllowance = monthRecords.reduce((sum, record) => sum + record.allowance, 0);
   const monthTravelCost = monthRecords.reduce((sum, record) => sum + record.travelCost, 0);
   const fixedDeductionTotal = payroll?.fixedDeductions.reduce((sum, deduction) => sum + deduction.value, 0) ?? 0;
-  const btWithholding = (payroll?.overtimePay ?? 0) * btWithholdingRate;
+  const specialWorkPay = (payroll?.overtimePay ?? 0) + (payroll?.saturdayPay ?? 0) + (payroll?.sundayPay ?? 0);
+  const btWithholding = specialWorkPay * btWithholdingRate;
   const netEstimate = payroll
-    ? payroll.monthlyBase + payroll.overtimePay + monthAllowance + monthTravelCost - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
+    ? payroll.monthlyBase + specialWorkPay + monthAllowance + monthTravelCost - payroll.loonheffingTable - btWithholding - fixedDeductionTotal
     : 0;
   const currency = (value: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(value);
   const compactCurrency = (value: number) => new Intl.NumberFormat("nl-NL", {
@@ -229,11 +298,13 @@ function CalendarHome() {
             <div className="space-y-2 text-sm">
               <p className="flex justify-between gap-3 text-slate-600"><span>Maandsalaris ({payroll.scale}{payroll.step})</span><span>{currency(payroll.monthlyBase)}</span></p>
               <p className="flex justify-between gap-3 text-slate-600"><span>Overwerkvergoeding (130%)</span><span>{currency(payroll.overtimePay)}</span></p>
-              <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Geschat brutoloon</span><span>{currency(payroll.monthlyBase + payroll.overtimePay)}</span></p>
+              <p className="flex justify-between gap-3 text-slate-600"><span>Zaterdagvergoeding (150%)</span><span>{currency(payroll.saturdayPay)}</span></p>
+              <p className="flex justify-between gap-3 text-slate-600"><span>Zondagvergoeding (200%)</span><span>{currency(payroll.sundayPay)}</span></p>
+              <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Geschat brutoloon</span><span>{currency(payroll.monthlyBase + specialWorkPay)}</span></p>
               <div className="space-y-1 border-t border-slate-100 pt-2 text-slate-600">
                 <p className="flex justify-between gap-3"><span>Tabelloon</span><span>{currency(payroll.tableSalary)}</span></p>
                 <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing</span><span>-{currency(payroll.loonheffingTable)}</span></p>
-                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Bijzonder tarief (50,47%)</span><span>-{currency(btWithholding)}</span></p>
+                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Bijzonder tarief op toeslagen (50,47%)</span><span>-{currency(btWithholding)}</span></p>
               </div>
               <p className="flex justify-between gap-3 text-emerald-700"><span>Verblijfskosten</span><span>{currency(monthAllowance)}</span></p>
               <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
@@ -242,7 +313,7 @@ function CalendarHome() {
                 {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · verlaagt tabelloon" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
                 <p className="flex justify-between gap-3 font-medium text-slate-800"><span>Totaal inhoudingen</span><span>-{currency(fixedDeductionTotal)}</span></p>
               </div>}
-              <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">Het bijzonder tarief op overwerk is geschat op 50,47%. Verblijfskosten zijn opgenomen in het nettoloon. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} procentuele inhouding(en) zijn opgeslagen maar niet meegenomen, omdat de berekeningsbasis niet is ingesteld.`}</p>
+              <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">Het bijzonder tarief op overwerk en weekendvergoedingen is geschat op 50,47%. Verblijfskosten zijn opgenomen in het nettoloon. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} procentuele inhouding(en) zijn opgeslagen maar niet meegenomen, omdat de berekeningsbasis niet is ingesteld.`}</p>
             </div>
           </section>
         )}

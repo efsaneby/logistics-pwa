@@ -1,7 +1,17 @@
 export interface WorkHoursResult {
   totalHours: number; // Toplam net çalışma saati
-  normalHours: number; // Normal çalışma saati (Günlük max 8 saat)
-  overtime130: number; // %130 Fazla mesai saati
+  normalHours: number; // Hafta içi normal çalışma saati (günlük max 8 saat)
+  overtime130: number; // Hafta içi %130 fazla mesai saati
+  saturdayHours: number; // Cumartesi %150 ücretlendirilen saat
+  sundayHours: number; // Pazar %200 ücretlendirilen saat
+  dailyBreakdown: {
+    date: string;
+    totalHours: number;
+    normalHours: number;
+    overtime130: number;
+    saturdayHours: number;
+    sundayHours: number;
+  }[];
 }
 
 /**
@@ -15,25 +25,78 @@ export function calculateWorkHours(
   end: Date,
   pauseMinutes: number = 0,
 ): WorkHoursResult {
-  if (end <= start) {
-    return { totalHours: 0, normalHours: 0, overtime130: 0 };
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    return {
+      totalHours: 0,
+      normalHours: 0,
+      overtime130: 0,
+      saturdayHours: 0,
+      sundayHours: 0,
+      dailyBreakdown: [],
+    };
   }
 
-  // Toplam süreyi milisaniye bazında hesapla
-  const diffMs = end.getTime() - start.getTime();
-  const grossHours = diffMs / (1000 * 60 * 60);
+  const grossHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+  const netHours = Math.max(0, grossHours - Math.max(0, pauseMinutes) / 60);
+  const netRatio = grossHours > 0 ? netHours / grossHours : 0;
+  const dailyHours = new Map<string, { weekday: number; saturday: number; sunday: number }>();
+  let cursor = new Date(start);
 
-  // Molayı saat cinsinden düş
-  const pauseHours = pauseMinutes / 60;
-  const netHours = Math.max(0, grossHours - pauseHours);
+  while (cursor < end) {
+    const nextDay = new Date(cursor);
+    nextDay.setHours(24, 0, 0, 0);
+    const segmentEnd = new Date(Math.min(nextDay.getTime(), end.getTime()));
+    const segmentHours = ((segmentEnd.getTime() - cursor.getTime()) / (1000 * 60 * 60)) * netRatio;
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+    const hours = dailyHours.get(key) ?? { weekday: 0, saturday: 0, sunday: 0 };
+    const dayOfWeek = cursor.getDay();
+    if (dayOfWeek === 6) hours.saturday += segmentHours;
+    else if (dayOfWeek === 0) hours.sunday += segmentHours;
+    else hours.weekday += segmentHours;
+    dailyHours.set(key, hours);
+    cursor = segmentEnd;
+  }
 
-  // CAO kuralı: Günlük standart 8 saattir. 8 saatin üzeri %130 mesaidir.
-  const normalHours = Math.min(8, netHours);
-  const overtime130 = Math.max(0, netHours - 8);
+  let normalHours = 0;
+  let overtime130 = 0;
+  let saturdayHours = 0;
+  let sundayHours = 0;
+  const dailyBreakdown = [];
+  for (const [date, hours] of dailyHours) {
+    const dailyNormalHours = Math.min(8, hours.weekday);
+    const dailyOvertime130 = Math.max(0, hours.weekday - 8);
+    normalHours += dailyNormalHours;
+    overtime130 += dailyOvertime130;
+    saturdayHours += hours.saturday;
+    sundayHours += hours.sunday;
+    dailyBreakdown.push({
+      date,
+      totalHours: Number((hours.weekday + hours.saturday + hours.sunday).toFixed(2)),
+      normalHours: Number(dailyNormalHours.toFixed(2)),
+      overtime130: Number(dailyOvertime130.toFixed(2)),
+      saturdayHours: Number(hours.saturday.toFixed(2)),
+      sundayHours: Number(hours.sunday.toFixed(2)),
+    });
+  }
 
   return {
     totalHours: Number(netHours.toFixed(2)),
     normalHours: Number(normalHours.toFixed(2)),
     overtime130: Number(overtime130.toFixed(2)),
+    saturdayHours: Number(saturdayHours.toFixed(2)),
+    sundayHours: Number(sundayHours.toFixed(2)),
+    dailyBreakdown,
   };
+}
+
+export function calculateRecordedWorkHours(
+  date: string,
+  startTime: string,
+  endTime: string,
+  pauseMinutes: number = 0,
+): WorkHoursResult {
+  const start = new Date(`${date}T${startTime}`);
+  const end = new Date(`${date}T${endTime}`);
+  if (end <= start) end.setDate(end.getDate() + 1);
+  return calculateWorkHours(start, end, pauseMinutes);
 }

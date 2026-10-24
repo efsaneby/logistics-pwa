@@ -217,7 +217,7 @@ export default function WorkCard({
 
         {result !== null ? (
           <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-2 gap-2 text-center">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">
                   Totaal
@@ -240,6 +240,22 @@ export default function WorkCard({
                 </span>
                 <span className="text-lg font-bold text-amber-700">
                   {formatHours(result.overtime130)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-indigo-700 uppercase block font-semibold">
+                  Zaterdag 150%
+                </span>
+                <span className="text-lg font-bold text-indigo-700">
+                  {formatHours(result.saturdayHours)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-violet-700 uppercase block font-semibold">
+                  Zondag 200%
+                </span>
+                <span className="text-lg font-bold text-violet-700">
+                  {formatHours(result.sundayHours)}
                 </span>
               </div>
             </div>

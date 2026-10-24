@@ -8,8 +8,10 @@ import { Label } from "@/components/ui/label";
 import {
   calculateEendaagseRit,
   calculateMeerdaagseRit,
+  type TripAllowanceRates,
 } from "@/lib/calculator/verblijfskosten";
 import { createClient } from "@/lib/supabase/client";
+import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rates";
 import { Truck, Calculator, Save } from "lucide-react";
 
 export default function TripCard({
@@ -78,10 +80,18 @@ export default function TripCard({
     }
 
     let allowance = 0;
+    const departureKey = `${depDate.getFullYear()}-${String(depDate.getMonth() + 1).padStart(2, "0")}-${String(depDate.getDate()).padStart(2, "0")}`;
+    let allowanceRates: TripAllowanceRates;
+    try {
+      allowanceRates = await getTripAllowanceRatesForDate(departureKey);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "De ritvergoedingen konden niet worden geladen.");
+      return;
+    }
     if (isMultiDay) {
-      allowance = calculateMeerdaagseRit(depDate, retDate);
+      allowance = calculateMeerdaagseRit(depDate, retDate, allowanceRates);
     } else {
-      allowance = calculateEendaagseRit(depDate, retDate);
+      allowance = calculateEendaagseRit(depDate, retDate, allowanceRates);
     }
 
     setResult(allowance);
