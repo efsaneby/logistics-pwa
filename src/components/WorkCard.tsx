@@ -104,12 +104,44 @@ export default function WorkCard({
         normal_hours: result.normalHours,
         overtime_130: result.overtime130,
       };
-      const saveResult = initialWork
-        ? await supabase.from("work_cards").update(workData).eq("id", initialWork.id).select("id").single()
-        : await supabase.from("work_cards").insert([workData]).select("id").single();
+      let saveError: string | null = null;
+      if (initialWork) {
+        const { error } = await supabase.from("work_cards")
+          .update(workData)
+          .eq("id", initialWork.id);
+        if (error) {
+          saveError = error.message;
+        } else {
+          const verification = await supabase.from("work_cards")
+            .select("date, start_time, end_time, break_minutes, is_overnight, normal_hours, overtime_130")
+            .eq("id", initialWork.id)
+            .maybeSingle();
+          if (verification.error) {
+            saveError = verification.error.message;
+          } else if (!verification.data) {
+            saveError = "De werktijd is niet gevonden. Ververs de dag en probeer het opnieuw.";
+          } else {
+            const saved = verification.data;
+            const matchesSavedValues =
+              saved.date === workData.date
+              && saved.start_time.slice(0, 8) === workData.start_time
+              && saved.end_time.slice(0, 8) === workData.end_time
+              && Number(saved.break_minutes) === workData.break_minutes
+              && saved.is_overnight === workData.is_overnight
+              && Number(saved.normal_hours) === workData.normal_hours
+              && Number(saved.overtime_130) === workData.overtime_130;
+            if (!matchesSavedValues) {
+              saveError = "De werktijd kon niet worden bijgewerkt. Controleer of de Supabase-migratie voor het bewerken van Werk-uren is uitgevoerd.";
+            }
+          }
+        }
+      } else {
+        const { error } = await supabase.from("work_cards").insert([workData]).select("id").single();
+        if (error) saveError = error.message;
+      }
 
-      if (saveResult.error) {
-        alert("Opslaan mislukt: " + saveResult.error.message);
+      if (saveError) {
+        alert("Opslaan mislukt: " + saveError);
       } else {
         try {
           const syncDates = [localDate];
