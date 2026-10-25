@@ -34,6 +34,14 @@ interface TripRecord {
   generated_end_work_id: string | null;
 }
 
+interface VehicleUsageRecord {
+  id: string;
+  tractor_identifier: string;
+  trailer_identifier: string | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
 type EditingRecord = { type: "work" | "trip"; id: string } | null;
 
 const dateKey = (date: Date) =>
@@ -62,6 +70,8 @@ export default function DayDetails({
 }) {
   const [works, setWorks] = useState<WorkRecord[]>([]);
   const [trips, setTrips] = useState<TripRecord[]>([]);
+  const [vehicleUsages, setVehicleUsages] = useState<VehicleUsageRecord[]>([]);
+  const [vehicleUsageError, setVehicleUsageError] = useState<string | null>(null);
   const [absence, setAbsence] = useState<AbsenceType | null>(null);
   const [tripRates, setTripRates] = useState<Map<string, Awaited<ReturnType<typeof getTripAllowanceRatesForDate>>>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -84,9 +94,13 @@ export default function DayDetails({
         setNoteLoading(true);
         setNoteError(null);
         setNoteMessage(null);
+        setVehicleUsageError(null);
         const supabase = createClient();
         try {
-          const [workResult, tripResult, absenceResult, noteResult] = await Promise.all([
+          const dayStart = new Date(`${date}T00:00:00`);
+          const dayEnd = new Date(dayStart);
+          dayEnd.setDate(dayEnd.getDate() + 1);
+          const [workResult, tripResult, absenceResult, noteResult, vehicleUsageResult] = await Promise.all([
             supabase.from("work_cards")
               .select("id, date, start_time, end_time, break_minutes, normal_hours, overtime_130, is_overnight")
               .eq("date", date)
@@ -102,8 +116,20 @@ export default function DayDetails({
               .select("note")
               .eq("date", date)
               .maybeSingle(),
+            supabase.from("driver_vehicle_usages")
+              .select("id, tractor_identifier, trailer_identifier, started_at, ended_at")
+              .lt("started_at", dayEnd.toISOString())
+              .or(`ended_at.is.null,ended_at.gt.${dayStart.toISOString()}`)
+              .order("started_at"),
           ]);
           if (!alive) return;
+          if (vehicleUsageResult.error) {
+            console.error("Voertuiggebruik voor dag laden mislukt:", vehicleUsageResult.error);
+            setVehicleUsageError("Voertuiggegevens voor deze dag konden niet worden geladen.");
+            setVehicleUsages([]);
+          } else {
+            setVehicleUsages(vehicleUsageResult.data ?? []);
+          }
           if (workResult.error || tripResult.error || absenceResult.error) {
             setError(workResult.error?.message ?? tripResult.error?.message ?? absenceResult.error?.message ?? "De gegevens van deze dag konden niet worden geladen.");
             setWorks([]);
@@ -253,6 +279,30 @@ export default function DayDetails({
 
       {!loading && !error && (
         <div className="space-y-3">
+          <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <Truck className="h-4 w-4 text-slate-600" />
+              Voertuigen gebruikt op deze dag
+            </h3>
+            {vehicleUsageError ? (
+              <p role="alert" className="mt-2 text-xs text-red-600">{vehicleUsageError}</p>
+            ) : vehicleUsages.length > 0 ? (
+              <ul className="mt-2 space-y-2">
+                {vehicleUsages.map((usage) => (
+                  <li key={usage.id} className="rounded-lg bg-white p-2 text-xs">
+                    <p className="break-words font-medium text-slate-800">
+                      Trekker {usage.tractor_identifier} · Oplegger {usage.trailer_identifier || "niet ingevuld"}
+                    </p>
+                    <p className="mt-1 text-slate-600">
+                      {formatDateTime(usage.started_at)} – {usage.ended_at ? formatDateTime(usage.ended_at) : "Nu"}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">Er zijn geen voertuigperiodes geregistreerd voor deze dag.</p>
+            )}
+          </section>
           {works.map((work) => {
             const workHours = calculateRecordedWorkHours(
               work.date,

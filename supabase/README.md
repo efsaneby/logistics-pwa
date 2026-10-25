@@ -40,6 +40,8 @@ contents of these files in filename order:
 
 `migrations/20261019000000_add_versioned_special_rate_withholding.sql`
 
+`migrations/20261020000000_add_driver_vehicle_usages.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -64,6 +66,9 @@ The thirteenth migration stores the special-rate withholding percentage on the
 effective-dated loonheffing table version. It seeds existing versions at 50.47%;
 future tax-table versions must set the percentage published for that year (for
 example, 50.47% is stored as `0.5047`).
+The fourteenth migration adds private driver vehicle-usage periods. Starting a
+new period ends the previous active period atomically, preserving the tractor
+and trailer identifiers and their usage times for later reference.
 
 For future annual trip allowance updates, add a new `trip_allowance_versions`
 row with its effective date range and source, then insert its first-day and

@@ -247,11 +247,11 @@ function ProfileForm({
         <section className="space-y-3 rounded-xl border border-slate-200 p-3">
           <div><h2 className="text-sm font-semibold text-slate-800">Maandelijkse inhoudingen</h2><p className="mt-1 text-xs text-slate-500">Vul de inhoudingen van je loonstrook in. Geef per inhouding aan of deze het tabelloon vóór de loonheffing verlaagt. Sommige pensioenpremies doen dat; andere inhoudingen, zoals contributie of boetes, kunnen na belasting worden ingehouden.</p></div>
           {loadingDeductions ? <p className="text-xs text-slate-500">Inhoudingen laden…</p> : deductions.map((deduction, index) => <div key={deduction.id ?? index} className="space-y-2 rounded-lg bg-slate-50 p-2">
-            <div className="grid grid-cols-[minmax(0,1fr)_100px_90px_auto] items-end gap-2">
-            <div className="space-y-1"><Label htmlFor={`deduction-name-${index}`}>Naam</Label><Input id={`deduction-name-${index}`} required value={deduction.name} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></div>
-            <div className="space-y-1"><Label htmlFor={`deduction-type-${index}`}>Type</Label><select id={`deduction-type-${index}`} value={deduction.calculation_type} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, calculation_type: event.target.value as Deduction["calculation_type"] } : item))} className="h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"><option value="fixed">Vast bedrag (€)</option><option value="percentage">Percentage (niet berekend)</option></select></div>
-            <div className="space-y-1"><Label htmlFor={`deduction-value-${index}`}>{deduction.calculation_type === "fixed" ? "Maandbedrag (€)" : "Percentage (%)"}</Label><Input id={`deduction-value-${index}`} type="number" min="0" step="0.001" required value={deduction.value} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, value: Number(event.target.value) } : item))} /></div>
-            <button type="button" aria-label={`${deduction.name || "Inhouding"} verwijderen`} onClick={() => setDeductions((items) => items.filter((_, i) => i !== index))} className="h-10 px-2 text-xs text-red-600">Verwijderen</button>
+            <div className="grid grid-cols-2 items-end gap-2">
+            <div className="col-span-2 min-w-0 space-y-1"><Label htmlFor={`deduction-name-${index}`}>Naam</Label><Input id={`deduction-name-${index}`} required value={deduction.name} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></div>
+            <div className="min-w-0 space-y-1"><Label htmlFor={`deduction-type-${index}`}>Type</Label><select id={`deduction-type-${index}`} value={deduction.calculation_type} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, calculation_type: event.target.value as Deduction["calculation_type"] } : item))} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-2 text-xs"><option value="fixed">Vast bedrag (€)</option><option value="percentage">Percentage (niet berekend)</option></select></div>
+            <div className="min-w-0 space-y-1"><Label htmlFor={`deduction-value-${index}`}>{deduction.calculation_type === "fixed" ? "Maandbedrag (€)" : "Percentage (%)"}</Label><Input id={`deduction-value-${index}`} type="number" min="0" step="0.001" required value={deduction.value} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, value: Number(event.target.value) } : item))} /></div>
+            <button type="button" aria-label={`${deduction.name || "Inhouding"} verwijderen`} onClick={() => setDeductions((items) => items.filter((_, i) => i !== index))} className="col-span-2 h-9 justify-self-end px-2 text-xs text-red-600">Verwijderen</button>
             </div>
             <label className="flex items-start gap-2 text-xs leading-4 text-slate-600"><input type="checkbox" checked={deduction.reduces_table_salary} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, reduces_table_salary: event.target.checked } : item))} className="mt-0.5" /><span>Dit is pensioenpremie die vóór de loonheffing van je loon wordt afgetrokken.</span></label>
           </div>)}
@@ -346,9 +346,9 @@ export default function AccountGate({ children }: { children: ReactNode }) {
   if (!profile || editingProfile) return <ProfileForm userId={session.user.id} initialProfile={profile} onSaved={(savedProfile) => { setProfile(savedProfile); setEditingProfile(false); }} />;
 
   return <>
-    <div className="mx-auto flex w-full max-w-lg items-center justify-between px-4 pt-3">
-      <span className="text-xs text-slate-500">{profile.first_name} {profile.last_name} · schaal {profile.scale}, trede {profile.step} · {profile.contract_hours_per_week} uur/week</span>
-      <div className="flex items-center gap-1">
+    <div className="mx-auto flex w-full max-w-lg items-start justify-between gap-2 px-4 pt-3">
+      <span className="min-w-0 flex-1 break-words text-xs text-slate-500">{profile.first_name} {profile.last_name} · schaal {profile.scale}, trede {profile.step} · {profile.contract_hours_per_week} uur/week</span>
+      <div className="flex shrink-0 items-center gap-1">
         <button aria-label="Profiel bewerken" onClick={() => setEditingProfile(true)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-200"><UserRoundPen className="h-4 w-4" /></button>
         <button aria-label="Uitloggen" onClick={() => { void supabase.auth.signOut(); }} className="rounded-lg p-2 text-slate-500 hover:bg-slate-200"><LogOut className="h-4 w-4" /></button>
       </div>

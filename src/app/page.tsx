@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DayDetails from "@/components/DayDetails";
+import VehicleUsageCard from "@/components/VehicleUsageCard";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import AccountGate from "@/components/AccountGate";
@@ -349,6 +350,8 @@ function CalendarHome() {
             <DayDetails date={selectedDate} refreshKey={refreshKey} onChanged={saved} />
           </>
         ) : (
+          <>
+          <VehicleUsageCard refreshKey={refreshKey} />
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <button aria-label="Vorige maand" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
@@ -392,6 +395,7 @@ function CalendarHome() {
               <span className="flex items-center gap-1.5"><StickyNote aria-hidden="true" className="h-3 w-3 text-violet-600" /> Notitie</span>
             </div>
           </section>
+          </>
         )}
       </div>
     </main>
