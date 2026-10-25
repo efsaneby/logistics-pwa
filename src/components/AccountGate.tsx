@@ -10,6 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoaderCircle, LogOut, UserRound, UserRoundPen } from "lucide-react";
+import {
+  getStandardPayrollDeductionsForDate,
+  isStandardPayrollDeductionName,
+  type StandardPayrollDeduction,
+} from "@/lib/supabase/standard-payroll-deductions";
 
 interface DriverProfile {
   user_id: string;
@@ -130,6 +135,9 @@ function ProfileForm({
   const [aowCategory, setAowCategory] = useState<DriverProfile["aow_category"]>(initialProfile?.aow_category ?? "under_aow");
   const [singleElderlyCredit, setSingleElderlyCredit] = useState(initialProfile?.single_elderly_credit ?? false);
   const [deductions, setDeductions] = useState<Deduction[]>([]);
+  const [standardDeductions, setStandardDeductions] = useState<StandardPayrollDeduction[]>([]);
+  const [loadingStandardDeductions, setLoadingStandardDeductions] = useState(true);
+  const [standardDeductionsError, setStandardDeductionsError] = useState<string | null>(null);
   const [loadingDeductions, setLoadingDeductions] = useState(Boolean(initialProfile));
   const [rates, setRates] = useState<SalaryScaleRate[]>([]);
   const [loadingRates, setLoadingRates] = useState(true);
@@ -153,6 +161,25 @@ function ProfileForm({
   }, [initialProfile]);
 
   useEffect(() => {
+    let alive = true;
+    const now = new Date();
+    const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    getStandardPayrollDeductionsForDate(currentDate)
+      .then((items) => {
+        if (alive) {
+          setStandardDeductions(items);
+          setStandardDeductionsError(null);
+        }
+      })
+      .catch((loadError: unknown) => {
+        console.error("Standaardinhoudingen laden mislukt:", loadError);
+        if (alive) setStandardDeductionsError("De automatische inhoudingen konden niet worden geladen.");
+      })
+      .finally(() => { if (alive) setLoadingStandardDeductions(false); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
     if (!initialProfile) return;
     let alive = true;
     createClient().from("driver_deductions")
@@ -162,7 +189,7 @@ function ProfileForm({
       .then(({ data, error: loadError }) => {
         if (!alive) return;
         if (loadError) setError(loadError.message);
-        else setDeductions((data ?? []) as Deduction[]);
+        else setDeductions(((data ?? []) as Deduction[]).filter((item) => !isStandardPayrollDeductionName(item.name)));
         setLoadingDeductions(false);
       });
     return () => { alive = false; };
@@ -173,6 +200,10 @@ function ProfileForm({
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (deductions.some((deduction) => isStandardPayrollDeductionName(deduction.name))) {
+      setError("Pensioen, WIA en SOOB worden automatisch toegevoegd. Verwijder deze uit de overige inhoudingen.");
+      return;
+    }
     setSaving(true);
     setError(null);
     const profile = {
@@ -245,7 +276,29 @@ function ProfileForm({
           {aowCategory !== "under_aow" && <label className="flex items-start gap-2 text-sm text-slate-700"><input type="checkbox" checked={singleElderlyCredit} onChange={(event) => setSingleElderlyCredit(event.target.checked)} className="mt-0.5" /><span>Alleenstaandeouderenkorting toepassen</span></label>}
         </section>
         <section className="space-y-3 rounded-xl border border-slate-200 p-3">
-          <div><h2 className="text-sm font-semibold text-slate-800">Maandelijkse inhoudingen</h2><p className="mt-1 text-xs text-slate-500">Vul de inhoudingen van je loonstrook in. Geef per inhouding aan of deze het tabelloon vóór de loonheffing verlaagt. Sommige pensioenpremies doen dat; andere inhoudingen, zoals contributie of boetes, kunnen na belasting worden ingehouden.</p></div>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">Automatische inhoudingen</h2>
+            <p className="mt-1 text-xs leading-4 text-slate-500">
+              Pensioen, WIA en SOOB zijn standaard ingesteld en worden automatisch in de netto-inschatting verwerkt. Je hoeft deze niet zelf toe te voegen.
+            </p>
+            {loadingStandardDeductions ? (
+              <p className="mt-2 text-xs text-slate-500">Standaardbedragen laden…</p>
+            ) : standardDeductionsError ? (
+              <p role="alert" className="mt-2 text-xs text-red-600">{standardDeductionsError}</p>
+            ) : standardDeductions.length > 0 ? (
+              <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                {standardDeductions.map((deduction) => (
+                  <li key={deduction.deduction_key} className="flex justify-between gap-3">
+                    <span>{deduction.name}</span>
+                    <span className="shrink-0 font-medium">{new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(deduction.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">Er zijn geen standaardbedragen ingesteld voor deze periode.</p>
+            )}
+          </div>
+          <div><h2 className="text-sm font-semibold text-slate-800">Overige maandelijkse inhoudingen</h2><p className="mt-1 text-xs text-slate-500">Voeg hier andere inhoudingen van je loonstrook toe, zoals contributie of boetes. Geef aan of deze het tabelloon vóór de loonheffing verlagen. Voeg Pensioen, WIA of SOOB niet toe; die worden hierboven automatisch verwerkt.</p></div>
           {loadingDeductions ? <p className="text-xs text-slate-500">Inhoudingen laden…</p> : deductions.map((deduction, index) => <div key={deduction.id ?? index} className="space-y-2 rounded-lg bg-slate-50 p-2">
             <div className="grid grid-cols-2 items-end gap-2">
             <div className="col-span-2 min-w-0 space-y-1"><Label htmlFor={`deduction-name-${index}`}>Naam</Label><Input id={`deduction-name-${index}`} required value={deduction.name} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></div>
@@ -253,7 +306,6 @@ function ProfileForm({
             <div className="min-w-0 space-y-1"><Label htmlFor={`deduction-value-${index}`}>{deduction.calculation_type === "fixed" ? "Maandbedrag (€)" : "Percentage (%)"}</Label><Input id={`deduction-value-${index}`} type="number" min="0" step="0.001" required value={deduction.value} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, value: Number(event.target.value) } : item))} /></div>
             <button type="button" aria-label={`${deduction.name || "Inhouding"} verwijderen`} onClick={() => setDeductions((items) => items.filter((_, i) => i !== index))} className="col-span-2 h-9 justify-self-end px-2 text-xs text-red-600">Verwijderen</button>
             </div>
-            <label className="flex items-start gap-2 text-xs leading-4 text-slate-600"><input type="checkbox" checked={deduction.reduces_table_salary} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, reduces_table_salary: event.target.checked } : item))} className="mt-0.5" /><span>Dit is pensioenpremie die vóór de loonheffing van je loon wordt afgetrokken.</span></label>
           </div>)}
           <button type="button" onClick={() => setDeductions((items) => [...items, { name: "", calculation_type: "fixed", value: 0, reduces_table_salary: false }])} className="text-xs font-medium text-slate-700 underline">Maandelijkse inhouding toevoegen</button>
         </section>

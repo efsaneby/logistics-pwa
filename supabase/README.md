@@ -42,6 +42,8 @@ contents of these files in filename order:
 
 `migrations/20261020000000_add_driver_vehicle_usages.sql`
 
+`migrations/20261021000000_add_standard_payroll_deductions.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -69,6 +71,18 @@ example, 50.47% is stored as `0.5047`).
 The fourteenth migration adds private driver vehicle-usage periods. Starting a
 new period ends the previous active period atomically, preserving the tractor
 and trailer identifiers and their usage times for later reference.
+The fifteenth migration adds effective-dated standard employee deductions for
+Pensioenfonds Vervoer, WIA, and SOOB, makes them read-only for drivers, and
+removes matching driver-entered copies to prevent double deductions. Initial
+amounts are €321.33, €28.46, and €12.23 from 1 October 2026. These values reduce
+the table salary and are also subtracted from the net estimate, matching the
+existing profile deduction behavior.
+
+To update standard deduction amounts, close each current row by setting its
+`effective_to` to the day before the new rate starts, then insert the new
+amounts into `standard_payroll_deductions` with the same new `effective_from`
+date. Keep previous rows so historical monthly estimates continue to use the
+amounts effective at that time.
 
 For future annual trip allowance updates, add a new `trip_allowance_versions`
 row with its effective date range and source, then insert its first-day and

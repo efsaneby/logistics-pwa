@@ -12,6 +12,10 @@ import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rate
 import { ChevronLeft, ChevronRight, StickyNote, Wallet } from "lucide-react";
 import { getSalaryScaleRatesForDate } from "@/lib/supabase/salary-scales";
 import type { SalaryScaleRate } from "@/lib/supabase/salary-scales";
+import {
+  getStandardPayrollDeductionsForDate,
+  isStandardPayrollDeductionName,
+} from "@/lib/supabase/standard-payroll-deductions";
 
 type DayRecord = {
   date: string;
@@ -196,6 +200,7 @@ function CalendarHome() {
     }
     const effectiveDate = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`;
     try {
+      const standardDeductions = await getStandardPayrollDeductionsForDate(effectiveDate);
       const salaryTable = await getSalaryScaleRatesForDate(effectiveDate);
       const rate = (salaryTable.rates as SalaryScaleRate[]).find((item) => item.scale === profile.scale && item.step === profile.step);
       if (!rate) throw new Error(`Salarisschaal ${profile.scale}${profile.step} is niet gevonden.`);
@@ -205,7 +210,17 @@ function CalendarHome() {
       const monthSaturdayHours = monthWorkRecords.reduce((sum, row) => sum + row.saturdayHours, 0);
       const monthSundayHours = monthWorkRecords.reduce((sum, row) => sum + row.sundayHours, 0);
       const monthlyBase = Number(rate.monthly_gross) * (Number(profile.contract_hours_per_week) / Number(salaryTable.version.full_time_hours_per_week));
-      const fixedDeductions = (deductions ?? []).filter((item) => item.calculation_type === "fixed").map((item) => ({ name: item.name, value: Number(item.value), reducesTableSalary: item.reduces_table_salary }));
+      const customDeductions = (deductions ?? []).filter((item) => !isStandardPayrollDeductionName(item.name));
+      const fixedDeductions = [
+        ...customDeductions
+          .filter((item) => item.calculation_type === "fixed")
+          .map((item) => ({ name: item.name, value: Number(item.value), reducesTableSalary: item.reduces_table_salary })),
+        ...standardDeductions.map((item) => ({
+          name: item.name,
+          value: item.amount,
+          reducesTableSalary: item.reduces_table_salary,
+        })),
+      ];
       const tableSalary = Math.max(0, monthlyBase - fixedDeductions.filter((item) => item.reducesTableSalary).reduce((sum, item) => sum + item.value, 0));
       const { data: taxVersion, error: taxVersionError } = await supabase.from("loonheffing_table_versions")
         .select("id, special_rate_withholding_rate")
@@ -238,7 +253,7 @@ function CalendarHome() {
         saturdayPay: monthSaturdayHours * Number(rate.hourly_rate_150),
         sundayPay: monthSundayHours * Number(rate.hourly_rate_100) * 2,
         fixedDeductions,
-        percentageDeductionCount: (deductions ?? []).filter((item) => item.calculation_type === "percentage").length,
+        percentageDeductionCount: customDeductions.filter((item) => item.calculation_type === "percentage").length,
         tableSalary,
         loonheffingTable: Number(taxRow[taxColumn]),
         specialRateWithholdingRate,
