@@ -44,6 +44,8 @@ contents of these files in filename order:
 
 `migrations/20261021000000_add_standard_payroll_deductions.sql`
 
+`migrations/20261022000000_allow_personal_standard_deductions.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -77,6 +79,11 @@ removes matching driver-entered copies to prevent double deductions. Initial
 amounts are €321.33, €28.46, and €12.23 from 1 October 2026. These values reduce
 the table salary and are also subtracted from the net estimate, matching the
 existing profile deduction behavior.
+The sixteenth migration adds WGA (€25.63) and Personeelsvereniging (€7.00) to
+the standard deduction list and creates private per-driver preferences. Drivers
+can override each standard amount or disable it without changing defaults for
+other users. Existing fixed WGA and Personeelsvereniging profile deductions are
+transferred to personal overrides before their old rows are removed.
 
 To update standard deduction amounts, close each current row by setting its
 `effective_to` to the day before the new rate starts, then insert the new

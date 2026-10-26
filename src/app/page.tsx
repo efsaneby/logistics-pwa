@@ -200,7 +200,7 @@ function CalendarHome() {
     }
     const effectiveDate = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-01`;
     try {
-      const standardDeductions = await getStandardPayrollDeductionsForDate(effectiveDate);
+      const standardDeductions = await getStandardPayrollDeductionsForDate(effectiveDate, authData.user.id);
       const salaryTable = await getSalaryScaleRatesForDate(effectiveDate);
       const rate = (salaryTable.rates as SalaryScaleRate[]).find((item) => item.scale === profile.scale && item.step === profile.step);
       if (!rate) throw new Error(`Salarisschaal ${profile.scale}${profile.step} is niet gevonden.`);
@@ -215,7 +215,7 @@ function CalendarHome() {
         ...customDeductions
           .filter((item) => item.calculation_type === "fixed")
           .map((item) => ({ name: item.name, value: Number(item.value), reducesTableSalary: item.reduces_table_salary })),
-        ...standardDeductions.map((item) => ({
+        ...standardDeductions.filter((item) => item.enabled).map((item) => ({
           name: item.name,
           value: item.amount,
           reducesTableSalary: item.reduces_table_salary,

@@ -164,7 +164,7 @@ function ProfileForm({
     let alive = true;
     const now = new Date();
     const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    getStandardPayrollDeductionsForDate(currentDate)
+    getStandardPayrollDeductionsForDate(currentDate, userId)
       .then((items) => {
         if (alive) {
           setStandardDeductions(items);
@@ -177,7 +177,7 @@ function ProfileForm({
       })
       .finally(() => { if (alive) setLoadingStandardDeductions(false); });
     return () => { alive = false; };
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (!initialProfile) return;
@@ -201,7 +201,12 @@ function ProfileForm({
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (deductions.some((deduction) => isStandardPayrollDeductionName(deduction.name))) {
-      setError("Pensioen, WIA en SOOB worden automatisch toegevoegd. Verwijder deze uit de overige inhoudingen.");
+      setError("Standaardinhoudingen worden automatisch toegevoegd. Verwijder deze uit de overige inhoudingen.");
+      return;
+    }
+    if (standardDeductions.length === 0
+      || standardDeductions.some((deduction) => !Number.isFinite(deduction.amount) || deduction.amount < 0)) {
+      setError("Controleer de bedragen van de standaardinhoudingen.");
       return;
     }
     setSaving(true);
@@ -250,6 +255,23 @@ function ProfileForm({
         return;
       }
     }
+    const { error: preferencesError } = await supabase
+      .from("driver_standard_payroll_deduction_preferences")
+      .upsert(
+        standardDeductions.map((deduction) => ({
+          user_id: userId,
+          deduction_key: deduction.deduction_key,
+          amount_override: deduction.amount === deduction.default_amount ? null : deduction.amount,
+          enabled: deduction.enabled,
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: "user_id,deduction_key" },
+      );
+    if (preferencesError) {
+      setSaving(false);
+      setError(preferencesError.message);
+      return;
+    }
     setSaving(false);
     window.dispatchEvent(new Event("driver-profile-updated"));
     onSaved(data as DriverProfile);
@@ -279,26 +301,68 @@ function ProfileForm({
           <div>
             <h2 className="text-sm font-semibold text-slate-800">Automatische inhoudingen</h2>
             <p className="mt-1 text-xs leading-4 text-slate-500">
-              Pensioen, WIA en SOOB zijn standaard ingesteld en worden automatisch in de netto-inschatting verwerkt. Je hoeft deze niet zelf toe te voegen.
+              Deze standaardbedragen zijn ingesteld als uitgangspunt. Je kunt ze aanpassen of verwijderen; ze worden verwerkt in de netto-inschatting.
             </p>
             {loadingStandardDeductions ? (
               <p className="mt-2 text-xs text-slate-500">Standaardbedragen laden…</p>
             ) : standardDeductionsError ? (
               <p role="alert" className="mt-2 text-xs text-red-600">{standardDeductionsError}</p>
             ) : standardDeductions.length > 0 ? (
-              <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                {standardDeductions.map((deduction) => (
-                  <li key={deduction.deduction_key} className="flex justify-between gap-3">
-                    <span>{deduction.name}</span>
-                    <span className="shrink-0 font-medium">{new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(deduction.amount)}</span>
-                  </li>
+              <div className="mt-3 space-y-2">
+                {standardDeductions.filter((deduction) => deduction.enabled).map((deduction) => (
+                  <div key={deduction.deduction_key} className="grid grid-cols-[minmax(0,1fr)_110px_auto] items-end gap-2 rounded-lg bg-slate-50 p-2">
+                    <Label htmlFor={`standard-deduction-${deduction.deduction_key}`} className="min-w-0 break-words text-xs leading-4">
+                      {deduction.name}
+                    </Label>
+                    <Input
+                      id={`standard-deduction-${deduction.deduction_key}`}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={deduction.amount}
+                      onChange={(event) => setStandardDeductions((items) => items.map((item) => (
+                        item.deduction_key === deduction.deduction_key
+                          ? { ...item, amount: event.target.value === "" ? 0 : Number(event.target.value) }
+                          : item
+                      )))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setStandardDeductions((items) => items.map((item) => (
+                        item.deduction_key === deduction.deduction_key ? { ...item, enabled: false } : item
+                      )))}
+                      className="h-8 px-1 text-xs text-red-600"
+                    >
+                      Verwijderen
+                    </button>
+                  </div>
                 ))}
-              </ul>
+                {standardDeductions.some((deduction) => !deduction.enabled) && (
+                  <div className="space-y-1 border-t border-slate-200 pt-2">
+                    <p className="text-xs font-medium text-slate-600">Verwijderde standaardinhoudingen</p>
+                    {standardDeductions.filter((deduction) => !deduction.enabled).map((deduction) => (
+                      <div key={deduction.deduction_key} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="break-words text-slate-600">{deduction.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setStandardDeductions((items) => items.map((item) => (
+                            item.deduction_key === deduction.deduction_key ? { ...item, enabled: true } : item
+                          )))}
+                          className="shrink-0 text-slate-700 underline"
+                        >
+                          Toevoegen
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
               <p className="mt-2 text-xs text-slate-500">Er zijn geen standaardbedragen ingesteld voor deze periode.</p>
             )}
           </div>
-          <div><h2 className="text-sm font-semibold text-slate-800">Overige maandelijkse inhoudingen</h2><p className="mt-1 text-xs text-slate-500">Voeg hier andere inhoudingen van je loonstrook toe, zoals contributie of boetes. Geef aan of deze het tabelloon vóór de loonheffing verlagen. Voeg Pensioen, WIA of SOOB niet toe; die worden hierboven automatisch verwerkt.</p></div>
+          <div><h2 className="text-sm font-semibold text-slate-800">Overige maandelijkse inhoudingen</h2><p className="mt-1 text-xs text-slate-500">Voeg hier andere inhoudingen van je loonstrook toe, zoals contributie of boetes. De standaardinhoudingen hierboven hoef je niet nogmaals toe te voegen.</p></div>
           {loadingDeductions ? <p className="text-xs text-slate-500">Inhoudingen laden…</p> : deductions.map((deduction, index) => <div key={deduction.id ?? index} className="space-y-2 rounded-lg bg-slate-50 p-2">
             <div className="grid grid-cols-2 items-end gap-2">
             <div className="col-span-2 min-w-0 space-y-1"><Label htmlFor={`deduction-name-${index}`}>Naam</Label><Input id={`deduction-name-${index}`} required value={deduction.name} onChange={(event) => setDeductions((items) => items.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /></div>
@@ -311,7 +375,7 @@ function ProfileForm({
         </section>
         {loadingRates && <p className="text-sm text-slate-500">Huidige salaristabel laden…</p>}
         {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-        <Button type="submit" disabled={saving || loadingDeductions || loadingRates || rates.length === 0} className="w-full">{saving && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}{initialProfile ? "Profiel opslaan" : "Opslaan en doorgaan"}</Button>
+        <Button type="submit" disabled={saving || loadingDeductions || loadingStandardDeductions || Boolean(standardDeductionsError) || loadingRates || rates.length === 0} className="w-full">{saving && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}{initialProfile ? "Profiel opslaan" : "Opslaan en doorgaan"}</Button>
       </form>
     </section>
   </main>;
