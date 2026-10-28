@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import AccountGate from "@/components/AccountGate";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
 import { calculateRecordedWorkHours } from "@/lib/calculator/worktime";
+import { getDutchPublicHoliday, getDutchPublicHolidays } from "@/lib/calendar/public-holidays";
 import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rates";
 import { ChevronLeft, ChevronRight, StickyNote, Wallet } from "lucide-react";
 import { getSalaryScaleRatesForDate } from "@/lib/supabase/salary-scales";
@@ -119,6 +120,12 @@ function CalendarHome() {
         row.absenceType = absence.absence_type;
         byDate.set(absence.date, row);
       }
+    }
+    for (const [date] of getDutchPublicHolidays(month.getFullYear())) {
+      if (!date.startsWith(`${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`)) continue;
+      const row = byDate.get(date) ?? emptyDayRecord(date);
+      if (row.hours === 0) row.hours = 8;
+      byDate.set(date, row);
     }
     const tripItems = tripResult.data ?? [];
     const tripDepartureDates = [...new Set(tripItems.map((item) => toDateKey(new Date(item.departure_time))))];
@@ -332,28 +339,53 @@ function CalendarHome() {
         </button>
 
         {showPayrollDetails && payroll && !payroll.error && (
-          <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-slate-900">Details nettoloon</h2>
-            <div className="space-y-2 text-sm">
-              <p className="flex justify-between gap-3 text-slate-600"><span>Maandsalaris ({payroll.scale}{payroll.step})</span><span>{currency(payroll.monthlyBase)}</span></p>
-              <p className="flex justify-between gap-3 text-slate-600"><span>Overwerkvergoeding (130%)</span><span>{currency(payroll.overtimePay)}</span></p>
-              <p className="flex justify-between gap-3 text-slate-600"><span>Zaterdagvergoeding (150%)</span><span>{currency(payroll.saturdayPay)}</span></p>
-              <p className="flex justify-between gap-3 text-slate-600"><span>Zondagvergoeding (200%)</span><span>{currency(payroll.sundayPay)}</span></p>
-              <p className="flex justify-between gap-3 border-t border-slate-100 pt-2 font-semibold text-slate-900"><span>Geschat brutoloon</span><span>{currency(payroll.monthlyBase + specialWorkPay)}</span></p>
-              <div className="space-y-1 border-t border-slate-100 pt-2 text-slate-600">
-                <p className="flex justify-between gap-3"><span>Tabelloon</span><span>{currency(payroll.tableSalary)}</span></p>
-                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Loonheffing</span><span>-{currency(payroll.loonheffingTable)}</span></p>
-                <p className="flex justify-between gap-3 font-medium text-rose-700"><span>Bijzonder tarief op toeslagen ({((payroll.specialRateWithholdingRate) * 100).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)</span><span>-{currency(btWithholding)}</span></p>
-              </div>
-              <p className="flex justify-between gap-3 text-emerald-700"><span>Verblijfskosten</span><span>{currency(monthAllowance)}</span></p>
-              <p className="flex justify-between gap-3 text-sky-700"><span>Reiskosten</span><span>{currency(monthTravelCost)}</span></p>
-              {payroll.fixedDeductions.length > 0 && <div className="space-y-1 border-t border-slate-100 pt-2">
-                <p className="font-medium text-slate-700">Maandelijkse inhoudingen</p>
-                {payroll.fixedDeductions.map((deduction, index) => <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3 text-slate-600"><span>{deduction.name}{deduction.reducesTableSalary ? " · verlaagt tabelloon" : ""}</span><span>-{currency(deduction.value)}</span></p>)}
-                <p className="flex justify-between gap-3 font-medium text-slate-800"><span>Totaal inhoudingen</span><span>-{currency(fixedDeductionTotal)}</span></p>
-              </div>}
-              <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">Het bijzonder tarief op overwerk en weekendvergoedingen is geschat op 50,47%. Verblijfskosten zijn opgenomen in het nettoloon. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} procentuele inhouding(en) zijn opgeslagen maar niet meegenomen, omdat de berekeningsbasis niet is ingesteld.`}</p>
+          <section className="mb-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Zo is je nettoloon opgebouwd</h2>
+              <p className="mt-1 text-xs text-slate-500">Groen = erbij · Rood = eraf</p>
             </div>
+
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-emerald-800">Inkomsten</h3>
+              <div className="space-y-1.5 text-sm text-emerald-950">
+                <p className="flex justify-between gap-3"><span>Maandsalaris ({payroll.scale}{payroll.step})</span><span className="font-medium">{currency(payroll.monthlyBase)}</span></p>
+                {payroll.overtimePay > 0 && <p className="flex justify-between gap-3"><span>Overwerk (130%)</span><span className="font-medium">+{currency(payroll.overtimePay)}</span></p>}
+                {payroll.saturdayPay > 0 && <p className="flex justify-between gap-3"><span>Zaterdag (150%)</span><span className="font-medium">+{currency(payroll.saturdayPay)}</span></p>}
+                {payroll.sundayPay > 0 && <p className="flex justify-between gap-3"><span>Zondag (200%)</span><span className="font-medium">+{currency(payroll.sundayPay)}</span></p>}
+                <p className="flex justify-between gap-3 border-t border-emerald-200 pt-1.5 font-semibold"><span>Bruto salaris inclusief toeslagen</span><span>{currency(payroll.monthlyBase + specialWorkPay)}</span></p>
+                {monthAllowance > 0 && <p className="flex justify-between gap-3"><span>Verblijfskosten</span><span className="font-medium">+{currency(monthAllowance)}</span></p>}
+                {monthTravelCost > 0 && <p className="flex justify-between gap-3"><span>Reiskosten</span><span className="font-medium">+{currency(monthTravelCost)}</span></p>}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-rose-800">Inhoudingen</h3>
+              <div className="space-y-1.5 text-sm text-rose-950">
+                <div className="rounded-lg bg-white/70 px-2 py-1.5 text-xs text-slate-600">
+                  Tabelloon voor de belastingberekening: <strong>{currency(payroll.tableSalary)}</strong>
+                </div>
+                <p className="flex justify-between gap-3"><span>Loonheffing</span><span className="font-medium">−{currency(payroll.loonheffingTable)}</span></p>
+                {btWithholding > 0 && <p className="flex justify-between gap-3"><span>Belasting op toeslagen ({(payroll.specialRateWithholdingRate * 100).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)</span><span className="font-medium">−{currency(btWithholding)}</span></p>}
+                {payroll.fixedDeductions.map((deduction, index) => (
+                  <p key={`${deduction.name}-${index}`} className="flex justify-between gap-3">
+                    <span>{deduction.name}{deduction.reducesTableSalary ? " · verlaagt tabelloon" : ""}</span>
+                    <span className="font-medium">−{currency(deduction.value)}</span>
+                  </p>
+                ))}
+                <p className="flex justify-between gap-3 border-t border-rose-200 pt-1.5 font-semibold"><span>Totaal inhoudingen</span><span>−{currency(payroll.loonheffingTable + btWithholding + fixedDeductionTotal)}</span></p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-900 p-3 text-white">
+              <p className="flex items-center justify-between gap-3 text-sm font-semibold">
+                <span>Geschat nettoloon</span><span className="text-lg text-emerald-300">{currency(netEstimate)}</span>
+              </p>
+              <p className="mt-1 text-[11px] text-slate-300">Bruto salaris + vergoedingen − inhoudingen</p>
+            </div>
+
+            <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-4 text-amber-900">
+              Dit is een schatting. Verblijfskosten en reiskosten zijn erbij opgeteld. {payroll.percentageDeductionCount > 0 && `${payroll.percentageDeductionCount} procentuele inhouding(en) zijn opgeslagen maar niet meegenomen, omdat de berekeningsbasis niet is ingesteld.`}
+            </p>
           </section>
         )}
 
@@ -379,6 +411,7 @@ function CalendarHome() {
                 if (day === null) return <div key={`empty-${index}`} />;
                 const key = toDateKey(new Date(month.getFullYear(), month.getMonth(), day));
                 const record = recordMap.get(key);
+                const holiday = getDutchPublicHoliday(key);
                 const hasNote = noteDates.has(key);
                 const dateLabel = `${day} ${month.toLocaleDateString("nl-NL", { month: "long" })}`;
                 const hoursLabel = record && record.hours > 0
@@ -389,12 +422,13 @@ function CalendarHome() {
                 const absenceLabel = record?.absenceType === "sick"
                   ? ", ziek 8 uur"
                   : record?.absenceType === "vacation" ? ", vakantie 8 uur" : "";
-                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}: ${hoursLabel}${absenceLabel}, ${allowanceLabel}, ${travelLabel}${hasNote ? ", heeft een notitie" : ""}`} className={`flex min-h-20 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
+                return <button key={key} onClick={() => setSelectedDate(key)} aria-label={`${dateLabel}${holiday ? `, feestdag ${holiday}` : ""}: ${hoursLabel}${absenceLabel}, ${allowanceLabel}, ${travelLabel}${hasNote ? ", heeft een notitie" : ""}`} className={`flex min-h-24 flex-col items-center justify-start gap-1 rounded-xl border px-1 pt-1.5 text-xs transition ${key === today ? "border-amber-300 bg-amber-50 font-semibold text-slate-900" : "border-slate-100 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}>
                   <span className="mb-0.5 flex w-full items-center justify-center gap-1">
                     {day}
                     {record?.absenceType && <span aria-hidden="true" className="rounded bg-sky-100 px-1 text-[8px] text-sky-800">{record.absenceType === "sick" ? "Z" : "V"}</span>}
                     {hasNote && <StickyNote aria-hidden="true" className="h-3 w-3 shrink-0 text-violet-600" />}
                   </span>
+                  {holiday && <span className="w-full truncate rounded bg-rose-100 px-0.5 py-0.5 text-[8px] font-medium leading-3 text-rose-800">{holiday}</span>}
                   <span className="w-full truncate rounded bg-amber-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-amber-800">{record && record.hours > 0 ? hoursLabel : "—"}</span>
                   <span className="w-full truncate rounded bg-emerald-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-emerald-800">{record && record.allowance > 0 ? compactCurrency(record.allowance) : "—"}</span>
                   <span className="w-full truncate rounded bg-sky-100 px-0.5 py-0.5 text-[9px] font-medium leading-3 text-sky-800">{record && record.travelCost > 0 ? compactCurrency(record.travelCost) : "—"}</span>

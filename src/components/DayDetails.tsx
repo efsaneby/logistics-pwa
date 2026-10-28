@@ -7,6 +7,7 @@ import TripCard from "@/components/TripCard";
 import DayAbsenceCard, { type AbsenceType } from "@/components/DayAbsenceCard";
 import { getTripDailyAllowance } from "@/lib/calculator/trip-allowance";
 import { calculateRecordedWorkHours } from "@/lib/calculator/worktime";
+import { getDutchPublicHoliday } from "@/lib/calendar/public-holidays";
 import { createClient } from "@/lib/supabase/client";
 import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
 import { getTripAllowanceRatesForDate } from "@/lib/supabase/trip-allowance-rates";
@@ -266,6 +267,7 @@ export default function DayDetails({
     month: "long",
     year: "numeric",
   });
+  const holiday = getDutchPublicHoliday(date);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -273,6 +275,14 @@ export default function DayDetails({
         <CalendarDays className="h-4 w-4 text-amber-500" />
         {dayLabel}
       </h2>
+      {!loading && !error && holiday && (
+        <p className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-900">
+          <strong>{holiday}.</strong>{" "}
+          {works.length > 0
+            ? "Gewerkte uren tellen direct als overwerk (130%) of volgens de bestaande zaterdag-/zondagtoeslag."
+            : "Deze dag telt automatisch als 8 normale uren."}
+        </p>
+      )}
 
       {loading ? <p className="py-4 text-center text-sm text-slate-500">Daggegevens laden…</p> : null}
       {error ? <p role="alert" className="py-3 text-sm text-red-600">{error}</p> : null}

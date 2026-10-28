@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateWorkHours, WorkHoursResult } from "@/lib/calculator/worktime";
+import { getDutchPublicHoliday } from "@/lib/calendar/public-holidays";
 import { createClient } from "@/lib/supabase/client";
 import { syncWorkGeneratedTrips } from "@/lib/supabase/sync-work-trips";
 import { Clock, Save } from "lucide-react";
@@ -69,6 +70,11 @@ export default function WorkCard({
     && endDate > startDate
     ? calculateWorkHours(startDate, endDate, Number(pauseMinutes) || 0)
     : null;
+  const holidayNames = result
+    ? [...new Set(result.dailyBreakdown
+      .map((day) => getDutchPublicHoliday(day.date))
+      .filter((holiday): holiday is string => holiday !== null))]
+    : [];
 
   const handleSave = async () => {
     if (!startDate || !endDate) {
@@ -249,6 +255,11 @@ export default function WorkCard({
 
         {result !== null ? (
           <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            {holidayNames.length > 0 && (
+              <p className="mb-3 rounded bg-rose-100 px-2 py-1 text-center text-xs font-medium text-rose-800">
+                {holidayNames.join(", ")}: gewerkte uren tellen direct als overwerk of weekenduren.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2 text-center">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block font-semibold">

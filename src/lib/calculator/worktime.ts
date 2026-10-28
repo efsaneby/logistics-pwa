@@ -1,3 +1,5 @@
+import { getDutchPublicHoliday } from "@/lib/calendar/public-holidays";
+
 export interface WorkHoursResult {
   totalHours: number; // Toplam net çalışma saati
   normalHours: number; // Hafta içi normal çalışma saati (günlük max 8 saat)
@@ -63,8 +65,9 @@ export function calculateWorkHours(
   let sundayHours = 0;
   const dailyBreakdown = [];
   for (const [date, hours] of dailyHours) {
-    const dailyNormalHours = Math.min(8, hours.weekday);
-    const dailyOvertime130 = Math.max(0, hours.weekday - 8);
+    const holiday = getDutchPublicHoliday(date) !== null;
+    const dailyNormalHours = holiday ? 0 : Math.min(8, hours.weekday);
+    const dailyOvertime130 = holiday ? hours.weekday : Math.max(0, hours.weekday - 8);
     normalHours += dailyNormalHours;
     overtime130 += dailyOvertime130;
     saturdayHours += hours.saturday;
