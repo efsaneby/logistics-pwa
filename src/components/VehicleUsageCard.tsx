@@ -23,6 +23,8 @@ type VehicleUsage = {
   ended_at: string | null;
 };
 
+const HISTORY_PAGE_SIZE = 5;
+
 const toLocalDateTimeInput = (date: Date) => {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -43,6 +45,7 @@ export default function VehicleUsageCard({ refreshKey }: { refreshKey: number })
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [visibleHistoryCount, setVisibleHistoryCount] = useState(HISTORY_PAGE_SIZE);
   const [tractorIdentifier, setTractorIdentifier] = useState("");
   const [trailerIdentifier, setTrailerIdentifier] = useState("");
   const [startedAt, setStartedAt] = useState(() => toLocalDateTimeInput(new Date()));
@@ -150,23 +153,39 @@ export default function VehicleUsageCard({ refreshKey }: { refreshKey: number })
               type="button"
               className="text-xs font-medium text-slate-600 underline"
               aria-expanded={showHistory}
-              onClick={() => setShowHistory((visible) => !visible)}
+              onClick={() => {
+                if (showHistory) setVisibleHistoryCount(HISTORY_PAGE_SIZE);
+                setShowHistory(!showHistory);
+              }}
             >
               {showHistory ? "Verberg geschiedenis" : `Bekijk geschiedenis (${history.length})`}
             </button>
             {showHistory && (
-              <ul className="mt-3 space-y-3">
-                {history.map((usage) => (
-                  <li key={usage.id} className="border-l-2 border-slate-200 pl-3 text-xs">
-                    <p className="break-words font-medium text-slate-800">
-                      Trekker {usage.tractor_identifier} · Oplegger {usage.trailer_identifier || "niet ingevuld"}
-                    </p>
-                    <p className="mt-1 text-slate-500">
-                      {formatDateTime(usage.started_at)} – {usage.ended_at ? formatDateTime(usage.ended_at) : "Nu"}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="mt-3 space-y-3">
+                  {history.slice(0, visibleHistoryCount).map((usage) => (
+                    <li key={usage.id} className="border-l-2 border-slate-200 pl-3 text-xs">
+                      <p className="break-words font-medium text-slate-800">
+                        Trekker {usage.tractor_identifier} · Oplegger {usage.trailer_identifier || "niet ingevuld"}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        {formatDateTime(usage.started_at)} – {usage.ended_at ? formatDateTime(usage.ended_at) : "Nu"}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                {history.length > visibleHistoryCount && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 w-full"
+                    onClick={() => setVisibleHistoryCount((count) => count + HISTORY_PAGE_SIZE)}
+                  >
+                    Meer laden ({history.length - visibleHistoryCount})
+                  </Button>
+                )}
+              </>
             )}
           </div>
         )}

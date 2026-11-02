@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,7 @@ export default function WorkCard({
   };
   onWorkSaved?: () => void;
 }) {
+  const fieldId = useId();
   const toDateTimeInput = (date: string, time: string) => `${date}T${time.slice(0, 5)}`;
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -90,6 +91,16 @@ export default function WorkCard({
     try {
       setSaving(true);
       const supabase = createClient();
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) {
+        throw new Error(
+          "Je sessie kon niet worden gecontroleerd. Log opnieuw in en probeer het opnieuw. "
+          + authError.message,
+        );
+      }
+      if (!authData.user) {
+        throw new Error("Je bent niet ingelogd. Log opnieuw in en probeer het opnieuw.");
+      }
 
       // Datum in YYYY-MM-DD-formaat.
       const year = startDate.getFullYear();
@@ -195,13 +206,13 @@ export default function WorkCard({
         <div className="space-y-3">
           <div>
             <Label
-              htmlFor="startTime"
+              htmlFor={`${fieldId}-start-time`}
               className="text-xs font-semibold text-slate-600"
             >
               Begintijd
             </Label>
             <Input
-              id="startTime"
+              id={`${fieldId}-start-time`}
               type="datetime-local"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
@@ -211,13 +222,13 @@ export default function WorkCard({
 
           <div>
             <Label
-              htmlFor="endTime"
+              htmlFor={`${fieldId}-end-time`}
               className="text-xs font-semibold text-slate-600"
             >
               Eindtijd
             </Label>
             <Input
-              id="endTime"
+              id={`${fieldId}-end-time`}
               type="datetime-local"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
@@ -227,13 +238,13 @@ export default function WorkCard({
 
           <div>
             <Label
-              htmlFor="pause"
+              htmlFor={`${fieldId}-pause`}
               className="text-xs font-semibold text-slate-600"
             >
               Pauze (minuten)
             </Label>
             <Input
-              id="pause"
+              id={`${fieldId}-pause`}
               type="number"
               min="0"
               step="5"
