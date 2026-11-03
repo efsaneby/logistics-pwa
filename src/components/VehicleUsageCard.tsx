@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LoaderCircle, Truck } from "lucide-react";
+import { LoaderCircle, Trash2, Truck } from "lucide-react";
 
 type VehicleUsage = {
   id: string;
@@ -51,6 +51,8 @@ export default function VehicleUsageCard({ refreshKey }: { refreshKey: number })
   const [startedAt, setStartedAt] = useState(() => toLocalDateTimeInput(new Date()));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deletingUsageId, setDeletingUsageId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadUsages = useCallback(async () => {
     setLoading(true);
@@ -83,6 +85,29 @@ export default function VehicleUsageCard({ refreshKey }: { refreshKey: number })
     setStartedAt(toLocalDateTimeInput(new Date()));
     setSaveError(null);
     setDialogOpen(true);
+  };
+
+  const deleteUsage = async (usage: VehicleUsage) => {
+    if (!confirm("Weet je zeker dat je deze voertuigregistratie wilt verwijderen? Deze periode verdwijnt ook uit de geschiedenis.")) return;
+
+    setDeletingUsageId(usage.id);
+    setDeleteError(null);
+    try {
+      const { data, error } = await createClient()
+        .from("driver_vehicle_usages")
+        .delete()
+        .eq("id", usage.id)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("De voertuigregistratie is niet gevonden of kon niet worden verwijderd.");
+      setUsages((current) => current.filter((item) => item.id !== usage.id));
+    } catch (error) {
+      console.error("Voertuiggebruik verwijderen mislukt:", error);
+      setDeleteError("De voertuigregistratie kon niet worden verwijderd. Probeer het opnieuw.");
+    } finally {
+      setDeletingUsageId(null);
+    }
   };
 
   const saveUsage = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -147,6 +172,24 @@ export default function VehicleUsageCard({ refreshKey }: { refreshKey: number })
           </Button>
         </div>
 
+        {deleteError && <p role="alert" className="mt-2 text-xs text-red-600">{deleteError}</p>}
+
+        {activeUsage && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 text-red-600 hover:text-red-700"
+            disabled={deletingUsageId !== null}
+            onClick={() => void deleteUsage(activeUsage)}
+          >
+            {deletingUsageId === activeUsage.id
+              ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              : <Trash2 className="mr-2 h-4 w-4" />}
+            Huidig voertuig verwijderen
+          </Button>
+        )}
+
         {history.length > 0 && (
           <div className="mt-3 border-t border-slate-100 pt-2">
             <button
@@ -164,13 +207,28 @@ export default function VehicleUsageCard({ refreshKey }: { refreshKey: number })
               <>
                 <ul className="mt-3 space-y-3">
                   {history.slice(0, visibleHistoryCount).map((usage) => (
-                    <li key={usage.id} className="border-l-2 border-slate-200 pl-3 text-xs">
-                      <p className="break-words font-medium text-slate-800">
-                        Trekker {usage.tractor_identifier} · Oplegger {usage.trailer_identifier || "niet ingevuld"}
-                      </p>
-                      <p className="mt-1 text-slate-500">
-                        {formatDateTime(usage.started_at)} – {usage.ended_at ? formatDateTime(usage.ended_at) : "Nu"}
-                      </p>
+                    <li key={usage.id} className="flex items-start justify-between gap-2 border-l-2 border-slate-200 pl-3 text-xs">
+                      <div className="min-w-0">
+                        <p className="break-words font-medium text-slate-800">
+                          Trekker {usage.tractor_identifier} · Oplegger {usage.trailer_identifier || "niet ingevuld"}
+                        </p>
+                        <p className="mt-1 text-slate-500">
+                          {formatDateTime(usage.started_at)} – {usage.ended_at ? formatDateTime(usage.ended_at) : "Nu"}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-red-600 hover:text-red-700"
+                        aria-label={`Verwijder voertuigregistratie van ${formatDateTime(usage.started_at)}`}
+                        disabled={deletingUsageId !== null}
+                        onClick={() => void deleteUsage(usage)}
+                      >
+                        {deletingUsageId === usage.id
+                          ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                          : <Trash2 className="h-4 w-4" />}
+                      </Button>
                     </li>
                   ))}
                 </ul>

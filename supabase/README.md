@@ -48,6 +48,8 @@ contents of these files in filename order:
 
 `migrations/20261102000000_prevent_overlapping_work_records.sql`
 
+`migrations/20261103000000_allow_driver_vehicle_usage_deletion.sql`
+
 The app's anonymous browser client can read the salary data after the first
 migration runs. Salary table writes are restricted to database administrators.
 The second migration grants each signed-in driver access only to their own
@@ -91,6 +93,8 @@ including periods that cross midnight. Non-overlapping periods on the same day
 remain allowed, and periods that meet exactly at their start/end time do not
 count as overlapping. Existing work records are not changed; resolve any
 overlaps already saved before trying to edit those records.
+The eighteenth migration allows drivers to delete their own active or historical
+vehicle-usage periods.
 
 To update standard deduction amounts, close each current row by setting its
 `effective_to` to the day before the new rate starts, then insert the new
